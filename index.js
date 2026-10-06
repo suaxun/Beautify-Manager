@@ -1,1002 +1,942 @@
 import {
-    saveSettingsDebounced,
-} from '../../../../script.js';
-
-import {
-    extension_settings,
-} from '../../../extensions.js';
-
-import {
     callGenericPopup,
     POPUP_TYPE,
 } from '../../../popup.js';
 
-import {
-    download,
-    escapeHtml,
-    getFileText,
-    uuidv4,
-} from '../../../utils.js';
+/**
+ * 扩展内部名称。
+ */
+const EXTENSION_NAME = 'native_theme_manager';
 
-const EXTENSION_NAME = 'beautify_manager';
-const STYLE_ELEMENT_ID = 'beautify-manager-runtime-style';
+/**
+ * 用户设置中的入口。
+ */
+const SETTINGS_ENTRY_ID = 'native_theme_manager_settings_entry';
 
-const UI_ENTRY_ID = 'beautify_manager_ui_entry';
-const EXTENSIONS_ENTRY_ID = 'beautify_manager_extensions_entry';
+/**
+ * 扩展菜单中的入口。
+ */
+const EXTENSIONS_ENTRY_ID = 'native_theme_manager_extensions_entry';
+
+/**
+ * 管理器弹窗 ID。
+ */
+const MANAGER_ID = 'native_theme_manager_popup';
+
+/**
+ * 原生主题选择器。
+ *
+ * 来自 SillyTavern 页面：
+ *
+ * <select id="themes"></select>
+ */
+const NATIVE_THEME_SELECT_SELECTOR = '#themes';
 
 /**
  * “用户设置 → UI Theme”中的注入位置。
  *
- * 对应你给出的 HTML：
+ * 对应：
  *
  * #UI-presets-block
- *   └── .flex-container.flexnowrap.alignitemscenter
- *
- * 默认会插入到这个元素下面。
+ *   > .flex-container.flexnowrap.alignitemscenter
  */
-const UI_THEME_ANCHOR_SELECTOR =
+const SETTINGS_ANCHOR_SELECTOR =
     '#UI-presets-block > .flex-container.flexnowrap.alignitemscenter';
 
 /**
- * 默认主题。
+ * 当前打开的管理器对象。
+ *
+ * @type {JQuery<HTMLElement>|null}
  */
-const DEFAULT_PRESETS = [
-    {
-        id: 'beautify-default-glass',
-        name: '透明玻璃',
-        css: `/* 透明玻璃主题示例 */
-:root {
-    --bm-accent: #9b8cff;
-    --bm-panel-bg: rgba(20, 20, 28, 0.72);
-    --bm-border: rgba(255, 255, 255, 0.12);
-}
-
-.drawer-content,
-#sheld,
-.popup,
-#options {
-    background: var(--bm-panel-bg) !important;
-    border-color: var(--bm-border) !important;
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-}
-
-.menu_button:hover,
-.right_menu_button:hover,
-.interactable:hover {
-    color: var(--bm-accent) !important;
-}
-
-textarea,
-input,
-select,
-.text_pole {
-    border-color: var(--bm-border) !important;
-}
-`,
-    },
-    {
-        id: 'beautify-default-rounded',
-        name: '圆角界面',
-        css: `/* 圆角界面主题示例 */
-:root {
-    --bm-radius-small: 8px;
-    --bm-radius-medium: 14px;
-    --bm-radius-large: 20px;
-}
-
-.menu_button,
-.text_pole,
-textarea,
-input,
-select {
-    border-radius: var(--bm-radius-small) !important;
-}
-
-.drawer-content,
-.popup,
-#options,
-#sheld {
-    border-radius: var(--bm-radius-large) !important;
-}
-
-.mes {
-    border-radius: var(--bm-radius-medium) !important;
-}
-`,
-    },
-];
+let activeManager = null;
 
 /**
- * 获取扩展设置对象。
+ * 用于监控原生主题列表变化。
+ *
+ * @type {MutationObserver|null}
  */
-function getSettings() {
-    if (
-        !extension_settings[EXTENSION_NAME] ||
-        typeof extension_settings[EXTENSION_NAME] !== 'object'
-    ) {
-        extension_settings[EXTENSION_NAME] = {};
+let themeSelectObserver = null;
+
+/**
+ * 管理器是否正在执行原生操作。
+ */
+let nativeOperationRunning = false;
+
+/**
+ * 获取 SillyTavern 原生主题选择框。
+ *
+ * @returns {HTMLSelectElement|null}
+ */
+function getNativeThemeSelect() {
+    const select = document.querySelector(NATIVE_THEME_SELECT_SELECTOR);
+
+    return select instanceof HTMLSelectElement
+        ? select
+        : null;
+}
+
+/**
+ * 读取 SillyTavern 当前所有原生主题。
+ *
+ * 这里不读取扩展自己的数据，而是直接读取 #themes 中的 option。
+ *
+ * @returns {{
+ *     value: string,
+ *     name: string,
+ *     selected: boolean,
+ *     disabled: boolean
+ * }[]}
+ */
+function getNativeThemes() {
+    const select = getNativeThemeSelect();
+
+    if (!select) {
+        return [];
     }
 
-    const settings = extension_settings[EXTENSION_NAME];
-
-    if (!Array.isArray(settings.presets)) {
-        settings.presets = structuredClone(DEFAULT_PRESETS);
-    }
-
-    if (typeof settings.enabled !== 'boolean') {
-        settings.enabled = true;
-    }
-
-    if (typeof settings.selectedPresetId !== 'string') {
-        settings.selectedPresetId = settings.presets[0]?.id ?? '';
-    }
-
-    if (typeof settings.livePreview !== 'boolean') {
-        settings.livePreview = true;
-    }
-
-    // 清理无效数据。
-    settings.presets = settings.presets
-        .filter(preset => preset && typeof preset === 'object')
-        .map(preset => ({
-            id: String(preset.id || uuidv4()),
-            name: String(preset.name || '未命名主题'),
-            css: String(preset.css || ''),
+    return Array.from(select.options)
+        .filter(option => option.value !== '')
+        .map(option => ({
+            value: option.value,
+            name: option.textContent?.trim() || option.value,
+            selected: option.selected,
+            disabled: option.disabled,
         }));
-
-    // 当前选中的预设不存在时，选择第一个。
-    if (
-        settings.selectedPresetId &&
-        !settings.presets.some(
-            preset => preset.id === settings.selectedPresetId,
-        )
-    ) {
-        settings.selectedPresetId = settings.presets[0]?.id ?? '';
-    }
-
-    return settings;
 }
 
 /**
- * 获取当前美化方案。
+ * 获取当前主题。
+ *
+ * @returns {{
+ *     value: string,
+ *     name: string,
+ *     selected: boolean,
+ *     disabled: boolean
+ * }|null}
  */
-function getSelectedPreset() {
-    const settings = getSettings();
+function getCurrentNativeTheme() {
+    const themes = getNativeThemes();
 
-    return settings.presets.find(
-        preset => preset.id === settings.selectedPresetId,
-    ) ?? null;
+    return themes.find(theme => theme.selected) ?? null;
 }
 
 /**
- * 创建运行时 style 标签。
+ * 将任意值转为可用于 CSS.escape 的字符串。
+ *
+ * @param {string} value
+ * @returns {string}
  */
-function getRuntimeStyleElement() {
-    let style = document.getElementById(STYLE_ELEMENT_ID);
-
-    if (!(style instanceof HTMLStyleElement)) {
-        style = document.createElement('style');
-        style.id = STYLE_ELEMENT_ID;
-        style.dataset.extension = EXTENSION_NAME;
-        document.head.appendChild(style);
+function escapeCssValue(value) {
+    if (window.CSS && typeof window.CSS.escape === 'function') {
+        return window.CSS.escape(value);
     }
 
-    return style;
-}
-
-/**
- * 将当前美化方案应用到页面。
- */
-function applySelectedPreset() {
-    const settings = getSettings();
-    const preset = getSelectedPreset();
-    const style = getRuntimeStyleElement();
-
-    if (!settings.enabled || !preset) {
-        style.textContent = '';
-        document.documentElement.removeAttribute('data-beautify-manager');
-        return;
-    }
-
-    style.textContent = preset.css;
-    document.documentElement.setAttribute(
-        'data-beautify-manager',
-        preset.id,
+    return String(value).replace(
+        /["\\]/g,
+        character => `\\${character}`,
     );
 }
 
 /**
- * 保存设置。
+ * HTML 编码。
+ *
+ * @param {unknown} value
+ * @returns {string}
  */
-function saveSettings() {
-    saveSettingsDebounced();
+function escapeHtml(value) {
+    const element = document.createElement('div');
+    element.textContent = String(value ?? '');
+    return element.innerHTML;
 }
 
 /**
- * HTML 安全编码，供属性使用。
+ * 切换 SillyTavern 原生主题。
+ *
+ * 关键点：
+ * 不是自己注入 CSS，而是改变 #themes 的值并触发 change。
+ *
+ * SillyTavern 自己会负责应用主题和保存主题选择。
+ *
+ * @param {string} themeValue
+ * @returns {boolean}
  */
-function escapeAttribute(value) {
-    return escapeHtml(String(value ?? ''))
-        .replaceAll('"', '&quot;')
-        .replaceAll('\'', '&#039;');
+function selectNativeTheme(themeValue) {
+    const select = getNativeThemeSelect();
+
+    if (!select) {
+        toastr.error('没有找到 SillyTavern 原生主题选择器。');
+        return false;
+    }
+
+    const optionExists = Array.from(select.options)
+        .some(option => option.value === themeValue);
+
+    if (!optionExists) {
+        toastr.error(`找不到主题：${themeValue}`);
+        return false;
+    }
+
+    select.value = themeValue;
+
+    /*
+     * 同时触发 input 和 change，兼容不同版本的 SillyTavern。
+     */
+    select.dispatchEvent(new Event('input', {
+        bubbles: true,
+    }));
+
+    select.dispatchEvent(new Event('change', {
+        bubbles: true,
+    }));
+
+    /*
+     * SillyTavern 大量界面仍然使用 jQuery。
+     * 原生 change 一般已经够用，这里作为额外兼容。
+     */
+    if (window.jQuery) {
+        window.jQuery(select).trigger('change');
+    }
+
+    return true;
 }
 
 /**
- * 创建管理器界面。
+ * 获取主题名称的首字。
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+function getThemeInitial(name) {
+    const trimmed = String(name || '').trim();
+
+    if (!trimmed) {
+        return 'T';
+    }
+
+    return Array.from(trimmed)[0].toUpperCase();
+}
+
+/**
+ * 根据主题名称生成稳定的色相。
+ *
+ * 这里只用于卡片装饰，不代表主题本身的真实颜色。
+ *
+ * @param {string} text
+ * @returns {number}
+ */
+function getThemeHue(text) {
+    let hash = 0;
+
+    for (const character of String(text)) {
+        hash = ((hash << 5) - hash) + character.codePointAt(0);
+        hash |= 0;
+    }
+
+    return Math.abs(hash) % 360;
+}
+
+/**
+ * 创建主题卡片。
+ *
+ * @param {{
+ *     value: string,
+ *     name: string,
+ *     selected: boolean,
+ *     disabled: boolean
+ * }} theme
+ * @returns {HTMLElement}
+ */
+function createThemeCard(theme) {
+    const card = document.createElement('div');
+
+    card.className = 'ntm-theme-card';
+    card.dataset.themeValue = theme.value;
+    card.tabIndex = theme.disabled ? -1 : 0;
+
+    if (theme.selected) {
+        card.classList.add('ntm-theme-card-selected');
+    }
+
+    if (theme.disabled) {
+        card.classList.add('ntm-theme-card-disabled');
+    }
+
+    const hue = getThemeHue(theme.name);
+
+    card.style.setProperty('--ntm-theme-hue', String(hue));
+
+    card.innerHTML = `
+        <div class="ntm-theme-preview">
+            <div class="ntm-theme-preview-background"></div>
+
+            <div class="ntm-theme-preview-panel">
+                <div class="ntm-theme-preview-line ntm-theme-preview-line-long"></div>
+                <div class="ntm-theme-preview-line"></div>
+                <div class="ntm-theme-preview-button"></div>
+            </div>
+
+            <div class="ntm-theme-initial">
+                ${escapeHtml(getThemeInitial(theme.name))}
+            </div>
+
+            <div class="ntm-theme-selected-icon">
+                <i class="fa-solid fa-circle-check"></i>
+            </div>
+        </div>
+
+        <div class="ntm-theme-info">
+            <div class="ntm-theme-name" title="${escapeHtml(theme.name)}">
+                ${escapeHtml(theme.name)}
+            </div>
+
+            <div class="ntm-theme-value" title="${escapeHtml(theme.value)}">
+                ${escapeHtml(theme.value)}
+            </div>
+        </div>
+
+        <div class="ntm-theme-card-footer">
+            <span class="ntm-theme-status">
+                ${theme.selected ? '当前使用' : '点击切换'}
+            </span>
+
+            <i class="fa-solid fa-chevron-right"></i>
+        </div>
+    `;
+
+    const activate = () => {
+        if (theme.disabled) {
+            return;
+        }
+
+        const success = selectNativeTheme(theme.value);
+
+        if (!success) {
+            return;
+        }
+
+        /*
+         * 主题应用可能需要一小段时间。
+         */
+        window.setTimeout(() => {
+            renderThemeCards();
+            updateManagerStatus();
+        }, 50);
+    };
+
+    card.addEventListener('click', activate);
+
+    card.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            activate();
+        }
+    });
+
+    return card;
+}
+
+/**
+ * 获取管理器中的搜索关键字。
+ *
+ * @returns {string}
+ */
+function getSearchKeyword() {
+    if (!activeManager) {
+        return '';
+    }
+
+    return String(
+        activeManager.find('#ntm_theme_search').val() ?? '',
+    ).trim().toLocaleLowerCase();
+}
+
+/**
+ * 渲染所有主题卡片。
+ */
+function renderThemeCards() {
+    if (!activeManager) {
+        return;
+    }
+
+    const grid = activeManager.find('#ntm_theme_grid').get(0);
+    const empty = activeManager.find('#ntm_empty_state');
+    const themes = getNativeThemes();
+    const keyword = getSearchKeyword();
+
+    if (!grid) {
+        return;
+    }
+
+    grid.innerHTML = '';
+
+    const filteredThemes = themes.filter(theme => {
+        if (!keyword) {
+            return true;
+        }
+
+        return theme.name.toLocaleLowerCase().includes(keyword)
+            || theme.value.toLocaleLowerCase().includes(keyword);
+    });
+
+    for (const theme of filteredThemes) {
+        grid.appendChild(createThemeCard(theme));
+    }
+
+    if (themes.length === 0) {
+        empty
+            .removeClass('displayNone')
+            .find('.ntm-empty-title')
+            .text('没有检测到主题');
+
+        empty
+            .find('.ntm-empty-description')
+            .text('请先打开“用户设置”，等待 SillyTavern 加载主题列表。');
+    } else if (filteredThemes.length === 0) {
+        empty
+            .removeClass('displayNone')
+            .find('.ntm-empty-title')
+            .text('没有搜索结果');
+
+        empty
+            .find('.ntm-empty-description')
+            .text('尝试使用其他主题名称进行搜索。');
+    } else {
+        empty.addClass('displayNone');
+    }
+
+    activeManager
+        .find('#ntm_theme_count')
+        .text(String(themes.length));
+
+    updateManagerStatus();
+}
+
+/**
+ * 更新顶部当前主题信息。
+ */
+function updateManagerStatus() {
+    if (!activeManager) {
+        return;
+    }
+
+    const currentTheme = getCurrentNativeTheme();
+
+    activeManager
+        .find('#ntm_current_theme')
+        .text(currentTheme?.name || '未检测到');
+
+    activeManager
+        .find('#ntm_current_theme_value')
+        .text(currentTheme?.value || '—');
+
+    activeManager
+        .find('#ntm_export_theme, #ntm_update_theme, #ntm_delete_theme')
+        .toggleClass('ntm-action-disabled', !currentTheme);
+}
+
+/**
+ * 构建管理器弹窗。
+ *
+ * @returns {JQuery<HTMLElement>}
  */
 function createManagerHtml() {
-    const settings = getSettings();
-    const selectedPreset = getSelectedPreset();
-
-    const options = settings.presets.map(preset => {
-        const selected =
-            preset.id === settings.selectedPresetId ? 'selected' : '';
-
-        return `
-            <option
-                value="${escapeAttribute(preset.id)}"
-                ${selected}
-            >
-                ${escapeHtml(preset.name)}
-            </option>
-        `;
-    }).join('');
-
-    const noPresets = settings.presets.length === 0;
-
     return $(`
-        <div id="beautify_manager_popup">
-            <div class="bm-header">
-                <div>
-                    <h3 class="bm-title">
+        <div id="${MANAGER_ID}">
+            <div class="ntm-manager-header">
+                <div class="ntm-manager-title-block">
+                    <div class="ntm-manager-icon">
                         <i class="fa-solid fa-palette"></i>
-                        美化管理器
-                    </h3>
-                    <div class="bm-subtitle">
-                        管理和切换 SillyTavern 自定义 CSS 美化方案
+                    </div>
+
+                    <div>
+                        <h3 class="ntm-manager-title">
+                            SillyTavern 主题管理器
+                        </h3>
+
+                        <div class="ntm-manager-subtitle">
+                            读取并管理 SillyTavern 当前已安装的所有原生主题
+                        </div>
                     </div>
                 </div>
 
-                <label class="checkbox_label bm-master-switch">
-                    <input
-                        id="bm_enabled"
-                        type="checkbox"
-                        ${settings.enabled ? 'checked' : ''}
+                <div class="ntm-current-theme-card">
+                    <div class="ntm-current-theme-label">
+                        当前主题
+                    </div>
+
+                    <div id="ntm_current_theme" class="ntm-current-theme-name">
+                        正在读取……
+                    </div>
+
+                    <div
+                        id="ntm_current_theme_value"
+                        class="ntm-current-theme-value"
                     >
-                    <span>启用美化</span>
-                </label>
+                        —
+                    </div>
+                </div>
             </div>
 
-            <div class="bm-toolbar">
-                <select
-                    id="bm_preset_select"
-                    class="text_pole"
-                    ${noPresets ? 'disabled' : ''}
-                >
-                    ${
-                        noPresets
-                            ? '<option value="">暂无美化方案</option>'
-                            : options
-                    }
-                </select>
+            <div class="ntm-manager-toolbar">
+                <div class="ntm-search-wrapper">
+                    <i class="fa-solid fa-magnifying-glass"></i>
 
-                <button
-                    id="bm_new"
-                    type="button"
+                    <input
+                        id="ntm_theme_search"
+                        class="text_pole"
+                        type="search"
+                        placeholder="搜索主题……"
+                        autocomplete="off"
+                    >
+                </div>
+
+                <div class="ntm-theme-counter">
+                    共
+                    <strong id="ntm_theme_count">0</strong>
+                    个主题
+                </div>
+
+                <div class="ntm-toolbar-spacer"></div>
+
+                <div
+                    id="ntm_refresh_themes"
                     class="menu_button menu_button_icon"
-                    title="新建方案"
+                    title="刷新主题列表"
                 >
-                    <i class="fa-solid fa-file-circle-plus"></i>
-                    <span>新建</span>
-                </button>
-
-                <button
-                    id="bm_duplicate"
-                    type="button"
-                    class="menu_button menu_button_icon"
-                    title="复制当前方案"
-                    ${noPresets ? 'disabled' : ''}
-                >
-                    <i class="fa-solid fa-clone"></i>
-                    <span>复制</span>
-                </button>
-
-                <button
-                    id="bm_rename"
-                    type="button"
-                    class="menu_button menu_button_icon"
-                    title="重命名"
-                    ${noPresets ? 'disabled' : ''}
-                >
-                    <i class="fa-solid fa-pencil"></i>
-                    <span>重命名</span>
-                </button>
-
-                <button
-                    id="bm_delete"
-                    type="button"
-                    class="menu_button menu_button_icon bm-danger-button"
-                    title="删除当前方案"
-                    ${noPresets ? 'disabled' : ''}
-                >
-                    <i class="fa-solid fa-trash-can"></i>
-                    <span>删除</span>
-                </button>
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                    <span>刷新</span>
+                </div>
             </div>
 
-            <div class="bm-import-export-row">
-                <button
-                    id="bm_import"
-                    type="button"
-                    class="menu_button menu_button_icon"
+            <div class="ntm-native-actions">
+                <div
+                    id="ntm_import_theme"
+                    class="menu_button menu_button_icon ntm-action"
+                    title="使用 SillyTavern 原生主题导入功能"
                 >
                     <i class="fa-solid fa-file-import"></i>
-                    <span>导入</span>
-                </button>
+                    <span>导入主题</span>
+                </div>
 
-                <button
-                    id="bm_export"
-                    type="button"
-                    class="menu_button menu_button_icon"
-                    ${noPresets ? 'disabled' : ''}
+                <div
+                    id="ntm_export_theme"
+                    class="menu_button menu_button_icon ntm-action"
+                    title="导出当前主题"
                 >
                     <i class="fa-solid fa-file-export"></i>
-                    <span>导出</span>
-                </button>
+                    <span>导出当前主题</span>
+                </div>
 
-                <input
-                    id="bm_import_file"
-                    type="file"
-                    accept=".json"
-                    hidden
+                <div
+                    id="ntm_save_theme"
+                    class="menu_button menu_button_icon ntm-action"
+                    title="将当前 UI 设置保存为新主题"
                 >
+                    <i class="fa-solid fa-file-circle-plus"></i>
+                    <span>另存为新主题</span>
+                </div>
 
-                <span class="expander"></span>
+                <div
+                    id="ntm_update_theme"
+                    class="menu_button menu_button_icon ntm-action"
+                    title="将当前 UI 设置保存到当前主题"
+                >
+                    <i class="fa-solid fa-save"></i>
+                    <span>更新当前主题</span>
+                </div>
 
-                <label class="checkbox_label">
-                    <input
-                        id="bm_live_preview"
-                        type="checkbox"
-                        ${settings.livePreview ? 'checked' : ''}
-                    >
-                    <span>实时预览</span>
-                </label>
+                <div
+                    id="ntm_delete_theme"
+                    class="menu_button menu_button_icon ntm-action ntm-delete-action"
+                    title="删除当前主题"
+                >
+                    <i class="fa-solid fa-trash-can"></i>
+                    <span>删除当前主题</span>
+                </div>
             </div>
 
-            <div class="bm-editor-block">
-                <div class="bm-editor-header">
-                    <label for="bm_css_editor">
-                        <strong>自定义 CSS</strong>
-                    </label>
-
-                    <span id="bm_save_state" class="bm-save-state">
-                        已保存
-                    </span>
+            <div class="ntm-section-header">
+                <div>
+                    <h4>已安装主题</h4>
+                    <small>
+                        点击主题卡片即可通过 SillyTavern 原生主题系统切换
+                    </small>
                 </div>
-
-                <textarea
-                    id="bm_css_editor"
-                    class="text_pole monospace"
-                    rows="20"
-                    spellcheck="false"
-                    placeholder="在这里输入 CSS……"
-                    ${noPresets ? 'disabled' : ''}
-                >${escapeHtml(selectedPreset?.css ?? '')}</textarea>
             </div>
 
-            <div class="bm-footer">
-                <div class="bm-help">
-                    <i class="fa-solid fa-circle-info"></i>
-                    CSS 会通过独立的
-                    <code>&lt;style&gt;</code>
-                    标签注入，不会修改
-                    <code>user.css</code>。
+            <div id="ntm_theme_grid" class="ntm-theme-grid"></div>
+
+            <div id="ntm_empty_state" class="ntm-empty-state displayNone">
+                <i class="fa-solid fa-palette"></i>
+
+                <div class="ntm-empty-title">
+                    没有检测到主题
                 </div>
 
-                <div class="bm-footer-actions">
-                    <button
-                        id="bm_apply"
-                        type="button"
-                        class="menu_button menu_button_icon"
-                        ${noPresets ? 'disabled' : ''}
-                    >
-                        <i class="fa-solid fa-eye"></i>
-                        <span>应用</span>
-                    </button>
-
-                    <button
-                        id="bm_save"
-                        type="button"
-                        class="menu_button menu_button_icon bm-primary-button"
-                        ${noPresets ? 'disabled' : ''}
-                    >
-                        <i class="fa-solid fa-save"></i>
-                        <span>保存</span>
-                    </button>
+                <div class="ntm-empty-description">
+                    请等待 SillyTavern 完成主题加载。
                 </div>
+            </div>
+
+            <div class="ntm-manager-footer">
+                <i class="fa-solid fa-circle-info"></i>
+
+                <span>
+                    这个管理器直接读取
+                    <code>#themes</code>
+                    ，不建立额外的主题数据库。
+                    导入、导出、保存和删除操作均调用 SillyTavern 原生功能。
+                </span>
             </div>
         </div>
     `);
 }
 
 /**
- * 打开文字输入框。
+ * 点击 SillyTavern 原生控制按钮。
+ *
+ * @param {string} selector
+ * @param {string} missingMessage
+ * @returns {boolean}
  */
-async function askForName(title, defaultValue = '') {
-    const result = await callGenericPopup(
-        title,
-        POPUP_TYPE.INPUT,
-        defaultValue,
-        {
-            okButton: '确定',
-            cancelButton: '取消',
-        },
-    );
+function clickNativeControl(selector, missingMessage) {
+    const control = document.querySelector(selector);
 
-    if (result === false || result === null || result === undefined) {
-        return null;
-    }
-
-    const name = String(result).trim();
-    return name || null;
-}
-
-/**
- * 保存编辑器内容到当前预设。
- */
-function saveEditorToCurrentPreset(managerHtml, showToast = true) {
-    const settings = getSettings();
-    const preset = getSelectedPreset();
-
-    if (!preset) {
-        toastr.warning('当前没有可以保存的美化方案。');
+    if (!(control instanceof HTMLElement)) {
+        toastr.error(missingMessage);
         return false;
     }
 
-    preset.css = String(
-        managerHtml.find('#bm_css_editor').val() ?? '',
-    );
+    nativeOperationRunning = true;
+    control.click();
 
-    saveSettings();
-    applySelectedPreset();
-
-    managerHtml.find('#bm_save_state')
-        .text('已保存')
-        .removeClass('bm-unsaved');
-
-    if (showToast) {
-        toastr.success(`美化方案“${preset.name}”已保存。`);
-    }
+    /*
+     * 原生操作可能弹出输入窗口或文件选择器。
+     * 稍后解除操作状态并刷新。
+     */
+    window.setTimeout(() => {
+        nativeOperationRunning = false;
+        renderThemeCards();
+    }, 500);
 
     return true;
 }
 
 /**
- * 更新弹窗中的方案选择器和编辑器。
+ * 绑定弹窗事件。
+ *
+ * @param {JQuery<HTMLElement>} manager
  */
-function refreshManagerUi(managerHtml) {
-    const settings = getSettings();
-    const preset = getSelectedPreset();
-    const select = managerHtml.find('#bm_preset_select');
-    const editor = managerHtml.find('#bm_css_editor');
+function bindManagerEvents(manager) {
+    manager.find('#ntm_theme_search').on('input', () => {
+        renderThemeCards();
+    });
 
-    select.empty();
+    manager.find('#ntm_refresh_themes').on('click', () => {
+        renderThemeCards();
+        toastr.success('主题列表已刷新。');
+    });
 
-    if (settings.presets.length === 0) {
-        select.append(new Option('暂无美化方案', '', true, true));
-        select.prop('disabled', true);
-        editor.val('').prop('disabled', true);
+    manager.find('#ntm_import_theme').on('click', () => {
+        clickNativeControl(
+            '#ui_preset_import_button',
+            '找不到 SillyTavern 原生主题导入按钮。',
+        );
+    });
 
-        managerHtml.find(
-            '#bm_duplicate, #bm_rename, #bm_delete, #bm_export, #bm_apply, #bm_save',
-        ).prop('disabled', true);
+    manager.find('#ntm_export_theme').on('click', () => {
+        const currentTheme = getCurrentNativeTheme();
 
+        if (!currentTheme) {
+            toastr.warning('当前没有选中的主题。');
+            return;
+        }
+
+        clickNativeControl(
+            '#ui_preset_export_button',
+            '找不到 SillyTavern 原生主题导出按钮。',
+        );
+    });
+
+    manager.find('#ntm_save_theme').on('click', () => {
+        clickNativeControl(
+            '#ui-preset-save-button',
+            '找不到 SillyTavern 原生主题保存按钮。',
+        );
+    });
+
+    manager.find('#ntm_update_theme').on('click', () => {
+        const currentTheme = getCurrentNativeTheme();
+
+        if (!currentTheme) {
+            toastr.warning('当前没有选中的主题。');
+            return;
+        }
+
+        clickNativeControl(
+            '#ui-preset-update-button',
+            '找不到 SillyTavern 原生主题更新按钮。',
+        );
+    });
+
+    manager.find('#ntm_delete_theme').on('click', () => {
+        const currentTheme = getCurrentNativeTheme();
+
+        if (!currentTheme) {
+            toastr.warning('当前没有选中的主题。');
+            return;
+        }
+
+        clickNativeControl(
+            '#ui-preset-delete-button',
+            '找不到 SillyTavern 原生主题删除按钮。',
+        );
+    });
+}
+
+/**
+ * 监听 #themes 中 option 的新增、删除和更新。
+ */
+function observeNativeThemeSelect() {
+    const select = getNativeThemeSelect();
+
+    if (!select) {
         return;
     }
 
-    for (const item of settings.presets) {
-        select.append(
-            new Option(
-                item.name,
-                item.id,
-                item.id === settings.selectedPresetId,
-                item.id === settings.selectedPresetId,
-            ),
-        );
+    if (themeSelectObserver) {
+        themeSelectObserver.disconnect();
     }
 
-    select.prop('disabled', false);
-    editor
-        .val(preset?.css ?? '')
-        .prop('disabled', false);
+    themeSelectObserver = new MutationObserver(() => {
+        if (nativeOperationRunning) {
+            return;
+        }
 
-    managerHtml.find(
-        '#bm_duplicate, #bm_rename, #bm_delete, #bm_export, #bm_apply, #bm_save',
-    ).prop('disabled', false);
+        renderThemeCards();
+    });
 
-    managerHtml.find('#bm_save_state')
-        .text('已保存')
-        .removeClass('bm-unsaved');
+    themeSelectObserver.observe(select, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        characterData: true,
+    });
+
+    select.addEventListener('change', () => {
+        window.setTimeout(() => {
+            renderThemeCards();
+        }, 0);
+    });
 }
 
 /**
- * 验证导入的 JSON。
+ * 打开主题管理器。
  */
-function normalizeImportedPreset(data) {
-    if (!data || typeof data !== 'object' || Array.isArray(data)) {
-        throw new Error('JSON 顶层必须是对象。');
+async function openThemeManager() {
+    /*
+     * 避免重复打开。
+     */
+    if (document.getElementById(MANAGER_ID)) {
+        return;
     }
 
-    if (typeof data.css !== 'string') {
-        throw new Error('缺少有效的 css 字段。');
+    const select = getNativeThemeSelect();
+
+    if (!select) {
+        toastr.warning(
+            'SillyTavern 的主题列表还没有加载完成，请稍后再试。',
+        );
+        return;
     }
 
-    return {
-        id: uuidv4(),
-        name: String(data.name || '导入的美化方案').trim()
-            || '导入的美化方案',
-        css: data.css,
-    };
-}
+    const manager = createManagerHtml();
+    activeManager = manager;
 
-/**
- * 打开美化管理器。
- */
-async function openBeautifyManager() {
-    const managerHtml = createManagerHtml();
-    let inputSaveTimer = null;
+    bindManagerEvents(manager);
+    renderThemeCards();
+    observeNativeThemeSelect();
 
-    managerHtml.find('#bm_enabled').on('change', function () {
-        const settings = getSettings();
-        settings.enabled = Boolean($(this).prop('checked'));
-
-        saveSettings();
-        applySelectedPreset();
-
-        toastr.info(
-            settings.enabled
-                ? '美化管理器已启用。'
-                : '美化管理器已关闭。',
-        );
-    });
-
-    managerHtml.find('#bm_live_preview').on('change', function () {
-        const settings = getSettings();
-        settings.livePreview = Boolean($(this).prop('checked'));
-        saveSettings();
-
-        if (settings.livePreview) {
-            const preset = getSelectedPreset();
-
-            if (preset) {
-                getRuntimeStyleElement().textContent = String(
-                    managerHtml.find('#bm_css_editor').val() ?? '',
-                );
-            }
-        } else {
-            applySelectedPreset();
-        }
-    });
-
-    managerHtml.find('#bm_preset_select').on('change', function () {
-        const settings = getSettings();
-
-        settings.selectedPresetId = String($(this).val() ?? '');
-        saveSettings();
-
-        refreshManagerUi(managerHtml);
-        applySelectedPreset();
-    });
-
-    managerHtml.find('#bm_css_editor').on('input', function () {
-        const settings = getSettings();
-
-        managerHtml.find('#bm_save_state')
-            .text('未保存')
-            .addClass('bm-unsaved');
-
-        if (settings.enabled && settings.livePreview) {
-            getRuntimeStyleElement().textContent = String(
-                $(this).val() ?? '',
-            );
-        }
-
-        clearTimeout(inputSaveTimer);
-
-        // 自动保存，避免用户直接关闭弹窗导致丢失。
-        inputSaveTimer = setTimeout(() => {
-            saveEditorToCurrentPreset(managerHtml, false);
-        }, 1000);
-    });
-
-    managerHtml.find('#bm_save').on('click', function () {
-        clearTimeout(inputSaveTimer);
-        saveEditorToCurrentPreset(managerHtml, true);
-    });
-
-    managerHtml.find('#bm_apply').on('click', function () {
-        const settings = getSettings();
-        const preset = getSelectedPreset();
-
-        if (!preset) {
-            return;
-        }
-
-        const css = String(
-            managerHtml.find('#bm_css_editor').val() ?? '',
-        );
-
-        if (settings.enabled) {
-            getRuntimeStyleElement().textContent = css;
-            toastr.success('当前 CSS 已应用。');
-        } else {
-            toastr.warning('美化管理器当前处于关闭状态。');
-        }
-    });
-
-    managerHtml.find('#bm_new').on('click', async function () {
-        const name = await askForName('请输入新美化方案名称：');
-
-        if (!name) {
-            return;
-        }
-
-        const settings = getSettings();
-        const preset = {
-            id: uuidv4(),
-            name,
-            css: `/* ${name} */\n`,
-        };
-
-        settings.presets.push(preset);
-        settings.selectedPresetId = preset.id;
-
-        saveSettings();
-        refreshManagerUi(managerHtml);
-        applySelectedPreset();
-
-        toastr.success(`已创建美化方案“${name}”。`);
-    });
-
-    managerHtml.find('#bm_duplicate').on('click', async function () {
-        const source = getSelectedPreset();
-
-        if (!source) {
-            return;
-        }
-
-        const name = await askForName(
-            '请输入复制后的美化方案名称：',
-            `${source.name} - 副本`,
-        );
-
-        if (!name) {
-            return;
-        }
-
-        const settings = getSettings();
-        const copy = {
-            id: uuidv4(),
-            name,
-            css: String(
-                managerHtml.find('#bm_css_editor').val() ?? source.css,
-            ),
-        };
-
-        settings.presets.push(copy);
-        settings.selectedPresetId = copy.id;
-
-        saveSettings();
-        refreshManagerUi(managerHtml);
-        applySelectedPreset();
-
-        toastr.success(`已复制为“${name}”。`);
-    });
-
-    managerHtml.find('#bm_rename').on('click', async function () {
-        const preset = getSelectedPreset();
-
-        if (!preset) {
-            return;
-        }
-
-        const name = await askForName(
-            '请输入新的美化方案名称：',
-            preset.name,
-        );
-
-        if (!name) {
-            return;
-        }
-
-        preset.name = name;
-
-        saveSettings();
-        refreshManagerUi(managerHtml);
-
-        toastr.success('美化方案已重命名。');
-    });
-
-    managerHtml.find('#bm_delete').on('click', async function () {
-        const settings = getSettings();
-        const preset = getSelectedPreset();
-
-        if (!preset) {
-            return;
-        }
-
-        const confirmed = await callGenericPopup(
-            `确定删除美化方案“${escapeHtml(preset.name)}”吗？`,
-            POPUP_TYPE.CONFIRM,
+    try {
+        await callGenericPopup(
+            manager,
+            POPUP_TYPE.TEXT,
             '',
             {
-                okButton: '删除',
-                cancelButton: '取消',
+                wide: true,
+                large: true,
+                allowVerticalScrolling: true,
             },
         );
+    } finally {
+        activeManager = null;
 
-        if (!confirmed) {
-            return;
+        if (themeSelectObserver) {
+            themeSelectObserver.disconnect();
+            themeSelectObserver = null;
         }
-
-        const index = settings.presets.findIndex(
-            item => item.id === preset.id,
-        );
-
-        if (index !== -1) {
-            settings.presets.splice(index, 1);
-        }
-
-        settings.selectedPresetId =
-            settings.presets[Math.max(0, index - 1)]?.id ??
-            settings.presets[0]?.id ??
-            '';
-
-        saveSettings();
-        refreshManagerUi(managerHtml);
-        applySelectedPreset();
-
-        toastr.success('美化方案已删除。');
-    });
-
-    managerHtml.find('#bm_import').on('click', function () {
-        managerHtml.find('#bm_import_file').trigger('click');
-    });
-
-    managerHtml.find('#bm_import_file').on('change', async function () {
-        const input = this instanceof HTMLInputElement ? this : null;
-        const file = input?.files?.[0];
-
-        if (!file) {
-            return;
-        }
-
-        try {
-            const text = await getFileText(file);
-            const data = JSON.parse(text);
-            const importedPreset = normalizeImportedPreset(data);
-            const settings = getSettings();
-
-            settings.presets.push(importedPreset);
-            settings.selectedPresetId = importedPreset.id;
-
-            saveSettings();
-            refreshManagerUi(managerHtml);
-            applySelectedPreset();
-
-            toastr.success(
-                `已导入美化方案“${importedPreset.name}”。`,
-            );
-        } catch (error) {
-            console.error('[Beautify Manager] Import failed:', error);
-            toastr.error(
-                `导入失败：${error?.message || '不是有效的美化方案文件'}`,
-            );
-        } finally {
-            if (input) {
-                input.value = '';
-            }
-        }
-    });
-
-    managerHtml.find('#bm_export').on('click', function () {
-        const preset = getSelectedPreset();
-
-        if (!preset) {
-            return;
-        }
-
-        // 导出前使用编辑器里的最新内容。
-        const exportedPreset = {
-            format: 'sillytavern-beautify-preset',
-            version: 1,
-            name: preset.name,
-            css: String(
-                managerHtml.find('#bm_css_editor').val() ?? preset.css,
-            ),
-        };
-
-        const safeName = preset.name
-            .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
-            .trim() || 'beautify-preset';
-
-        download(
-            JSON.stringify(exportedPreset, null, 4),
-            `${safeName}.json`,
-            'application/json',
-        );
-    });
-
-    await callGenericPopup(
-        managerHtml,
-        POPUP_TYPE.TEXT,
-        '',
-        {
-            wide: true,
-            large: true,
-            allowVerticalScrolling: true,
-        },
-    );
-
-    clearTimeout(inputSaveTimer);
-
-    // 用户关闭窗口时再保存一次。
-    const currentPreset = getSelectedPreset();
-
-    if (currentPreset && managerHtml.find('#bm_css_editor').length) {
-        currentPreset.css = String(
-            managerHtml.find('#bm_css_editor').val() ?? '',
-        );
-
-        saveSettings();
-        applySelectedPreset();
     }
 }
 
 /**
- * 创建统一入口按钮。
+ * 创建入口按钮。
+ *
+ * 使用 div 而不是 button，避免 SillyTavern 对原生 button
+ * 应用 disabled / opacity 样式而导致整个入口看起来是灰色。
+ *
+ * @param {string} id
+ * @returns {HTMLDivElement}
  */
-function createEntryButton(id, compact = false) {
+function createEntryButton(id) {
     const button = document.createElement('div');
 
     button.id = id;
-    button.className = compact
-        ? 'menu_button menu_button_icon bm-entry-button bm-entry-button-compact'
-        : 'menu_button menu_button_icon bm-entry-button';
+    button.className =
+        'menu_button menu_button_icon ntm-entry-button';
 
-    button.title = '打开美化管理器';
+    button.title = '打开 SillyTavern 主题管理器';
+
     button.innerHTML = `
         <i class="fa-solid fa-palette"></i>
-        <span>美化管理器</span>
+        <span>主题管理器</span>
     `;
 
     button.addEventListener('click', event => {
         event.preventDefault();
         event.stopPropagation();
-        openBeautifyManager();
+        openThemeManager();
     });
 
     return button;
 }
 
 /**
- * 注入到“用户设置 → UI Theme”的指定位置下面。
+ * 注入到用户设置的 Theme 区域。
  */
-function injectIntoUiThemeSettings() {
-    if (document.getElementById(UI_ENTRY_ID)) {
+function injectIntoThemeSettings() {
+    if (document.getElementById(SETTINGS_ENTRY_ID)) {
         return true;
     }
 
-    const anchor = document.querySelector(UI_THEME_ANCHOR_SELECTOR);
+    const anchor = document.querySelector(
+        SETTINGS_ANCHOR_SELECTOR,
+    );
 
     if (!anchor) {
         return false;
     }
 
     const wrapper = document.createElement('div');
-    wrapper.id = UI_ENTRY_ID;
-    wrapper.className = 'bm-settings-entry-row';
+
+    wrapper.id = SETTINGS_ENTRY_ID;
+    wrapper.className = 'ntm-settings-entry';
 
     const button = createEntryButton(
-        `${UI_ENTRY_ID}_button`,
-        false,
+        `${SETTINGS_ENTRY_ID}_button`,
     );
 
     wrapper.appendChild(button);
 
-    // “下面”即插到该 flex-container 后方。
+    /*
+     * 插入到：
+     *
+     * .flex-container.flexnowrap.alignitemscenter
+     *
+     * 的下面。
+     */
     anchor.insertAdjacentElement('afterend', wrapper);
 
     return true;
 }
 
 /**
- * 注入扩展菜单。
+ * 注入到扩展菜单。
  *
- * #extensionsMenuButton 通常只是打开菜单的触发器，
- * 真正的菜单容器一般是 #extensionsMenu。
+ * 不同版本/第三方主题可能使用：
  *
- * 所以优先把入口添加到 #extensionsMenu 中。
- * 如果当前版本没有 #extensionsMenu，则退化为放到
- * #extensionsMenuButton 后面，而不是破坏其内部点击结构。
+ * #extensionsMenu
+ * #extensionsMenuButton
+ *
+ * 所以分别兼容。
  */
 function injectIntoExtensionsMenu() {
     if (document.getElementById(EXTENSIONS_ENTRY_ID)) {
         return true;
     }
 
-    const extensionsMenu = document.querySelector('#extensionsMenu');
+    /*
+     * 优先寻找真正的扩展菜单。
+     */
+    const menu = document.querySelector('#extensionsMenu');
 
-    if (extensionsMenu) {
+    if (menu instanceof HTMLElement) {
         const entry = document.createElement('div');
 
         entry.id = EXTENSIONS_ENTRY_ID;
         entry.className =
-            'list-group-item interactable bm-extensions-menu-entry';
+            'list-group-item interactable ntm-extension-menu-entry';
 
         entry.innerHTML = `
             <i class="fa-solid fa-palette fa-fw"></i>
-            <span>美化管理器</span>
+            <span>主题管理器</span>
         `;
 
         entry.addEventListener('click', event => {
             event.preventDefault();
             event.stopPropagation();
-
-            // 如果扩展菜单本身支持隐藏，则点击后关闭。
-            if (extensionsMenu instanceof HTMLElement) {
-                extensionsMenu.style.display = 'none';
-            }
-
-            openBeautifyManager();
+            openThemeManager();
         });
 
-        extensionsMenu.appendChild(entry);
+        menu.appendChild(entry);
         return true;
     }
 
-    const extensionsMenuButton =
-        document.querySelector('#extensionsMenuButton');
+    /*
+     * 如果你的版本把 #extensionsMenuButton 当成菜单容器，
+     * 则注入其内部。
+     */
+    const menuButton = document.querySelector(
+        '#extensionsMenuButton',
+    );
 
-    if (!extensionsMenuButton) {
+    if (!(menuButton instanceof HTMLElement)) {
         return false;
     }
 
-    /*
-     * 某些版本中只存在 #extensionsMenuButton。
-     * 不建议把完整按钮直接塞进触发器内部，否则会发生嵌套点击。
-     * 这里将入口插入到触发器后方。
-     */
-    const fallbackEntry = createEntryButton(
-        EXTENSIONS_ENTRY_ID,
-        true,
-    );
+    const entry = document.createElement('div');
 
-    fallbackEntry.classList.add('bm-extension-menu-fallback');
-    extensionsMenuButton.insertAdjacentElement(
-        'afterend',
-        fallbackEntry,
-    );
+    entry.id = EXTENSIONS_ENTRY_ID;
+    entry.className =
+        'menu_button menu_button_icon ntm-extension-menu-entry';
+
+    entry.innerHTML = `
+        <i class="fa-solid fa-palette fa-fw"></i>
+        <span>主题管理器</span>
+    `;
+
+    entry.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        openThemeManager();
+    });
+
+    menuButton.appendChild(entry);
 
     return true;
 }
 
 /**
- * 执行全部入口注入。
+ * 注入全部入口。
  */
 function injectAllEntries() {
-    injectIntoUiThemeSettings();
+    injectIntoThemeSettings();
     injectIntoExtensionsMenu();
 }
 
 /**
- * 观察动态 DOM。
- *
- * 用户设置抽屉和扩展菜单有可能在扩展初始化之后才创建，
- * 所以不能只执行一次 querySelector。
+ * 监听 SillyTavern 动态 DOM。
  */
-function startInjectionObserver() {
+function startDomObserver() {
     injectAllEntries();
 
     let scheduled = false;
@@ -1010,7 +950,16 @@ function startInjectionObserver() {
 
         requestAnimationFrame(() => {
             scheduled = false;
+
             injectAllEntries();
+
+            if (
+                activeManager
+                && !themeSelectObserver
+                && getNativeThemeSelect()
+            ) {
+                observeNativeThemeSelect();
+            }
         });
     });
 
@@ -1021,14 +970,14 @@ function startInjectionObserver() {
 }
 
 /**
- * 初始化扩展。
+ * 初始化。
  */
 function init() {
-    getSettings();
-    applySelectedPreset();
-    startInjectionObserver();
+    startDomObserver();
 
-    console.log('[Beautify Manager] Extension initialized.');
+    console.log(
+        `[${EXTENSION_NAME}] Native theme manager initialized.`,
+    );
 }
 
 jQuery(() => {
