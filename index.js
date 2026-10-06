@@ -1,144 +1,72 @@
 import {
+    saveSettingsDebounced,
+} from '../../../../script.js';
+
+import {
+    extension_settings,
+} from '../../../extensions.js';
+
+import {
     callGenericPopup,
     POPUP_TYPE,
 } from '../../../popup.js';
 
-/**
- * 扩展内部名称。
- */
-const EXTENSION_NAME = 'native_theme_manager';
+import {
+    uuidv4,
+} from '../../../utils.js';
 
-/**
- * 用户设置中的入口。
- */
-const SETTINGS_ENTRY_ID = 'native_theme_manager_settings_entry';
+/* =========================================================
+ * 基本配置
+ * ========================================================= */
 
-/**
- * 扩展菜单中的入口。
- */
-const EXTENSIONS_ENTRY_ID = 'native_theme_manager_extensions_entry';
+const EXTENSION_KEY = 'native_theme_manager_v2';
 
-/**
- * 管理器弹窗 ID。
- */
+const SETTINGS_ENTRY_ID = 'ntm_settings_entry';
+const EXTENSIONS_ENTRY_ID = 'ntm_extensions_entry';
 const MANAGER_ID = 'native_theme_manager_popup';
 
-/**
- * 原生主题选择器。
- *
- * 来自 SillyTavern 页面：
- *
- * <select id="themes"></select>
- */
-const NATIVE_THEME_SELECT_SELECTOR = '#themes';
+const THEME_SELECT_SELECTOR = '#themes';
 
-/**
- * “用户设置 → UI Theme”中的注入位置。
- *
- * 对应：
- *
- * #UI-presets-block
- *   > .flex-container.flexnowrap.alignitemscenter
- */
 const SETTINGS_ANCHOR_SELECTOR =
     '#UI-presets-block > .flex-container.flexnowrap.alignitemscenter';
 
+const DATABASE_NAME = 'SillyTavernNativeThemeManager';
+const DATABASE_VERSION = 1;
+const BLOB_STORE_NAME = 'blobs';
+
 /**
- * 当前打开的管理器对象。
+ * 当前打开的管理器。
  *
  * @type {JQuery<HTMLElement>|null}
  */
 let activeManager = null;
 
 /**
- * 用于监控原生主题列表变化。
+ * 主题下拉框观察器。
  *
  * @type {MutationObserver|null}
  */
 let themeSelectObserver = null;
 
 /**
- * 管理器是否正在执行原生操作。
+ * 当前由 URL.createObjectURL 创建的 URL。
+ * 每次重新渲染时释放，避免内存泄漏。
+ *
+ * @type {string[]}
  */
-let nativeOperationRunning = false;
+let activeObjectUrls = [];
 
 /**
- * 获取 SillyTavern 原生主题选择框。
- *
- * @returns {HTMLSelectElement|null}
+ * 防止同时执行多次导入。
  */
-function getNativeThemeSelect() {
-    const select = document.querySelector(NATIVE_THEME_SELECT_SELECTOR);
+let isImportingTheme = false;
 
-    return select instanceof HTMLSelectElement
-        ? select
-        : null;
-}
+/* =========================================================
+ * 通用工具
+ * ========================================================= */
 
 /**
- * 读取 SillyTavern 当前所有原生主题。
- *
- * 这里不读取扩展自己的数据，而是直接读取 #themes 中的 option。
- *
- * @returns {{
- *     value: string,
- *     name: string,
- *     selected: boolean,
- *     disabled: boolean
- * }[]}
- */
-function getNativeThemes() {
-    const select = getNativeThemeSelect();
-
-    if (!select) {
-        return [];
-    }
-
-    return Array.from(select.options)
-        .filter(option => option.value !== '')
-        .map(option => ({
-            value: option.value,
-            name: option.textContent?.trim() || option.value,
-            selected: option.selected,
-            disabled: option.disabled,
-        }));
-}
-
-/**
- * 获取当前主题。
- *
- * @returns {{
- *     value: string,
- *     name: string,
- *     selected: boolean,
- *     disabled: boolean
- * }|null}
- */
-function getCurrentNativeTheme() {
-    const themes = getNativeThemes();
-
-    return themes.find(theme => theme.selected) ?? null;
-}
-
-/**
- * 将任意值转为可用于 CSS.escape 的字符串。
- *
- * @param {string} value
- * @returns {string}
- */
-function escapeCssValue(value) {
-    if (window.CSS && typeof window.CSS.escape === 'function') {
-        return window.CSS.escape(value);
-    }
-
-    return String(value).replace(
-        /["\\]/g,
-        character => `\\${character}`,
-    );
-}
-
-/**
- * HTML 编码。
+ * HTML 转义。
  *
  * @param {unknown} value
  * @returns {string}
@@ -150,81 +78,24 @@ function escapeHtml(value) {
 }
 
 /**
- * 切换 SillyTavern 原生主题。
+ * 属性值转义。
  *
- * 关键点：
- * 不是自己注入 CSS，而是改变 #themes 的值并触发 change。
- *
- * SillyTavern 自己会负责应用主题和保存主题选择。
- *
- * @param {string} themeValue
- * @returns {boolean}
- */
-function selectNativeTheme(themeValue) {
-    const select = getNativeThemeSelect();
-
-    if (!select) {
-        toastr.error('没有找到 SillyTavern 原生主题选择器。');
-        return false;
-    }
-
-    const optionExists = Array.from(select.options)
-        .some(option => option.value === themeValue);
-
-    if (!optionExists) {
-        toastr.error(`找不到主题：${themeValue}`);
-        return false;
-    }
-
-    select.value = themeValue;
-
-    /*
-     * 同时触发 input 和 change，兼容不同版本的 SillyTavern。
-     */
-    select.dispatchEvent(new Event('input', {
-        bubbles: true,
-    }));
-
-    select.dispatchEvent(new Event('change', {
-        bubbles: true,
-    }));
-
-    /*
-     * SillyTavern 大量界面仍然使用 jQuery。
-     * 原生 change 一般已经够用，这里作为额外兼容。
-     */
-    if (window.jQuery) {
-        window.jQuery(select).trigger('change');
-    }
-
-    return true;
-}
-
-/**
- * 获取主题名称的首字。
- *
- * @param {string} name
+ * @param {unknown} value
  * @returns {string}
  */
-function getThemeInitial(name) {
-    const trimmed = String(name || '').trim();
-
-    if (!trimmed) {
-        return 'T';
-    }
-
-    return Array.from(trimmed)[0].toUpperCase();
+function escapeAttribute(value) {
+    return escapeHtml(value)
+        .replaceAll('"', '&quot;')
+        .replaceAll('\'', '&#039;');
 }
 
 /**
- * 根据主题名称生成稳定的色相。
- *
- * 这里只用于卡片装饰，不代表主题本身的真实颜色。
+ * 生成一个稳定颜色。
  *
  * @param {string} text
- * @returns {number}
+ * @returns {string}
  */
-function getThemeHue(text) {
+function createStableColor(text) {
     let hash = 0;
 
     for (const character of String(text)) {
@@ -232,136 +103,797 @@ function getThemeHue(text) {
         hash |= 0;
     }
 
-    return Math.abs(hash) % 360;
+    const hue = Math.abs(hash) % 360;
+
+    return `hsl(${hue} 72% 58%)`;
 }
 
 /**
- * 创建主题卡片。
- *
- * @param {{
- *     value: string,
- *     name: string,
- *     selected: boolean,
- *     disabled: boolean
- * }} theme
- * @returns {HTMLElement}
+ * 释放预览图 URL。
  */
-function createThemeCard(theme) {
-    const card = document.createElement('div');
-
-    card.className = 'ntm-theme-card';
-    card.dataset.themeValue = theme.value;
-    card.tabIndex = theme.disabled ? -1 : 0;
-
-    if (theme.selected) {
-        card.classList.add('ntm-theme-card-selected');
+function revokeObjectUrls() {
+    for (const url of activeObjectUrls) {
+        URL.revokeObjectURL(url);
     }
 
-    if (theme.disabled) {
-        card.classList.add('ntm-theme-card-disabled');
-    }
+    activeObjectUrls = [];
+}
 
-    const hue = getThemeHue(theme.name);
+/**
+ * 延迟。
+ *
+ * @param {number} milliseconds
+ * @returns {Promise<void>}
+ */
+function delay(milliseconds) {
+    return new Promise(resolve => {
+        window.setTimeout(resolve, milliseconds);
+    });
+}
 
-    card.style.setProperty('--ntm-theme-hue', String(hue));
+/* =========================================================
+ * IndexedDB：保存图片和真实主题文件
+ * ========================================================= */
 
-    card.innerHTML = `
-        <div class="ntm-theme-preview">
-            <div class="ntm-theme-preview-background"></div>
+/**
+ * 打开扩展数据库。
+ *
+ * @returns {Promise<IDBDatabase>}
+ */
+function openDatabase() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(
+            DATABASE_NAME,
+            DATABASE_VERSION,
+        );
 
-            <div class="ntm-theme-preview-panel">
-                <div class="ntm-theme-preview-line ntm-theme-preview-line-long"></div>
-                <div class="ntm-theme-preview-line"></div>
-                <div class="ntm-theme-preview-button"></div>
-            </div>
+        request.onupgradeneeded = () => {
+            const database = request.result;
 
-            <div class="ntm-theme-initial">
-                ${escapeHtml(getThemeInitial(theme.name))}
-            </div>
+            if (!database.objectStoreNames.contains(BLOB_STORE_NAME)) {
+                database.createObjectStore(BLOB_STORE_NAME);
+            }
+        };
 
-            <div class="ntm-theme-selected-icon">
-                <i class="fa-solid fa-circle-check"></i>
-            </div>
-        </div>
+        request.onsuccess = () => {
+            resolve(request.result);
+        };
 
-        <div class="ntm-theme-info">
-            <div class="ntm-theme-name" title="${escapeHtml(theme.name)}">
-                ${escapeHtml(theme.name)}
-            </div>
+        request.onerror = () => {
+            reject(request.error);
+        };
+    });
+}
 
-            <div class="ntm-theme-value" title="${escapeHtml(theme.value)}">
-                ${escapeHtml(theme.value)}
-            </div>
-        </div>
+/**
+ * 保存 Blob。
+ *
+ * @param {string} key
+ * @param {Blob} blob
+ * @returns {Promise<void>}
+ */
+async function saveBlob(key, blob) {
+    const database = await openDatabase();
 
-        <div class="ntm-theme-card-footer">
-            <span class="ntm-theme-status">
-                ${theme.selected ? '当前使用' : '点击切换'}
-            </span>
+    await new Promise((resolve, reject) => {
+        const transaction = database.transaction(
+            BLOB_STORE_NAME,
+            'readwrite',
+        );
 
-            <i class="fa-solid fa-chevron-right"></i>
-        </div>
-    `;
+        const store = transaction.objectStore(BLOB_STORE_NAME);
+        store.put(blob, key);
 
-    const activate = () => {
-        if (theme.disabled) {
-            return;
-        }
-
-        const success = selectNativeTheme(theme.value);
-
-        if (!success) {
-            return;
-        }
-
-        /*
-         * 主题应用可能需要一小段时间。
-         */
-        window.setTimeout(() => {
-            renderThemeCards();
-            updateManagerStatus();
-        }, 50);
-    };
-
-    card.addEventListener('click', activate);
-
-    card.addEventListener('keydown', event => {
-        if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            activate();
-        }
+        transaction.oncomplete = resolve;
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
     });
 
-    return card;
+    database.close();
 }
 
 /**
- * 获取管理器中的搜索关键字。
+ * 读取 Blob。
+ *
+ * @param {string} key
+ * @returns {Promise<Blob|null>}
+ */
+async function readBlob(key) {
+    if (!key) {
+        return null;
+    }
+
+    const database = await openDatabase();
+
+    const result = await new Promise((resolve, reject) => {
+        const transaction = database.transaction(
+            BLOB_STORE_NAME,
+            'readonly',
+        );
+
+        const store = transaction.objectStore(BLOB_STORE_NAME);
+        const request = store.get(key);
+
+        request.onsuccess = () => resolve(request.result ?? null);
+        request.onerror = () => reject(request.error);
+    });
+
+    database.close();
+
+    return result instanceof Blob ? result : null;
+}
+
+/**
+ * 删除 Blob。
+ *
+ * @param {string} key
+ * @returns {Promise<void>}
+ */
+async function deleteBlob(key) {
+    if (!key) {
+        return;
+    }
+
+    const database = await openDatabase();
+
+    await new Promise((resolve, reject) => {
+        const transaction = database.transaction(
+            BLOB_STORE_NAME,
+            'readwrite',
+        );
+
+        const store = transaction.objectStore(BLOB_STORE_NAME);
+        store.delete(key);
+
+        transaction.oncomplete = resolve;
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+    });
+
+    database.close();
+}
+
+/* =========================================================
+ * 扩展设置
+ * ========================================================= */
+
+/**
+ * 默认数据结构：
+ *
+ * {
+ *   groups: [
+ *     {
+ *       id,
+ *       name,
+ *       activeVariantId,
+ *       variants: [
+ *         {
+ *           id,
+ *           name,
+ *           color,
+ *           nativeThemeValue,
+ *           previewKey,
+ *           previewFileName,
+ *           themeFileKey,
+ *           themeFileName,
+ *           themeFileSuggestedName
+ *         }
+ *       ]
+ *     }
+ *   ]
+ * }
+ */
+function getSettings() {
+    if (
+        !extension_settings[EXTENSION_KEY] ||
+        typeof extension_settings[EXTENSION_KEY] !== 'object'
+    ) {
+        extension_settings[EXTENSION_KEY] = {};
+    }
+
+    const settings = extension_settings[EXTENSION_KEY];
+
+    if (!Array.isArray(settings.groups)) {
+        settings.groups = [];
+    }
+
+    settings.groups = settings.groups
+        .filter(group => group && typeof group === 'object')
+        .map(group => {
+            if (!Array.isArray(group.variants)) {
+                group.variants = [];
+            }
+
+            return {
+                id: String(group.id || uuidv4()),
+                name: String(group.name || '未命名主题系列'),
+                activeVariantId: String(
+                    group.activeVariantId ||
+                    group.variants[0]?.id ||
+                    '',
+                ),
+                variants: group.variants.map(variant => ({
+                    id: String(variant.id || uuidv4()),
+                    name: String(variant.name || '默认'),
+                    color: String(
+                        variant.color ||
+                        createStableColor(variant.name),
+                    ),
+                    nativeThemeValue: String(
+                        variant.nativeThemeValue || '',
+                    ),
+                    previewKey: String(variant.previewKey || ''),
+                    previewFileName: String(
+                        variant.previewFileName || '',
+                    ),
+                    themeFileKey: String(
+                        variant.themeFileKey || '',
+                    ),
+                    themeFileName: String(
+                        variant.themeFileName || '',
+                    ),
+                    themeFileSuggestedName: String(
+                        variant.themeFileSuggestedName || '',
+                    ),
+                })),
+            };
+        });
+
+    return settings;
+}
+
+/**
+ * 保存设置。
+ */
+function saveSettings() {
+    saveSettingsDebounced();
+}
+
+/* =========================================================
+ * SillyTavern 原生主题读取
+ * ========================================================= */
+
+/**
+ * 获取原生主题选择框。
+ *
+ * @returns {HTMLSelectElement|null}
+ */
+function getThemeSelect() {
+    const element = document.querySelector(
+        THEME_SELECT_SELECTOR,
+    );
+
+    return element instanceof HTMLSelectElement
+        ? element
+        : null;
+}
+
+/**
+ * 获取全部原生主题。
+ *
+ * @returns {{
+ *   value: string,
+ *   name: string,
+ *   selected: boolean
+ * }[]}
+ */
+function getNativeThemes() {
+    const select = getThemeSelect();
+
+    if (!select) {
+        return [];
+    }
+
+    return Array.from(select.options)
+        .filter(option => option.value !== '')
+        .map(option => ({
+            value: option.value,
+            name: option.textContent?.trim() || option.value,
+            selected: option.selected,
+        }));
+}
+
+/**
+ * 获取当前主题值。
  *
  * @returns {string}
  */
-function getSearchKeyword() {
-    if (!activeManager) {
-        return '';
-    }
-
-    return String(
-        activeManager.find('#ntm_theme_search').val() ?? '',
-    ).trim().toLocaleLowerCase();
+function getCurrentThemeValue() {
+    return getThemeSelect()?.value ?? '';
 }
 
 /**
- * 渲染所有主题卡片。
+ * 原生主题是否存在。
+ *
+ * @param {string} themeValue
+ * @returns {boolean}
  */
-function renderThemeCards() {
+function nativeThemeExists(themeValue) {
+    if (!themeValue) {
+        return false;
+    }
+
+    return getNativeThemes().some(
+        theme => theme.value === themeValue,
+    );
+}
+
+/**
+ * 切换 SillyTavern 原生主题。
+ *
+ * @param {string} themeValue
+ * @returns {boolean}
+ */
+function selectNativeTheme(themeValue) {
+    const select = getThemeSelect();
+
+    if (!select) {
+        toastr.error('没有找到 SillyTavern 原生主题列表。');
+        return false;
+    }
+
+    const exists = Array.from(select.options).some(
+        option => option.value === themeValue,
+    );
+
+    if (!exists) {
+        return false;
+    }
+
+    select.value = themeValue;
+
+    select.dispatchEvent(new Event('change', {
+        bubbles: true,
+    }));
+
+    return true;
+}
+
+/* =========================================================
+ * 自动同步原生主题
+ * ========================================================= */
+
+/**
+ * 将未被管理器收录的原生主题自动创建为独立主题系列。
+ *
+ * 之后可以进入“编辑系列”，把其他色系添加进同一个系列。
+ */
+function syncNativeThemesToGroups() {
+    const settings = getSettings();
+    const nativeThemes = getNativeThemes();
+
+    const alreadyAssigned = new Set();
+
+    for (const group of settings.groups) {
+        for (const variant of group.variants) {
+            if (variant.nativeThemeValue) {
+                alreadyAssigned.add(variant.nativeThemeValue);
+            }
+        }
+    }
+
+    let changed = false;
+
+    for (const theme of nativeThemes) {
+        if (alreadyAssigned.has(theme.value)) {
+            continue;
+        }
+
+        const variantId = uuidv4();
+
+        settings.groups.push({
+            id: uuidv4(),
+            name: theme.name,
+            activeVariantId: variantId,
+            variants: [
+                {
+                    id: variantId,
+                    name: '默认',
+                    color: createStableColor(theme.name),
+                    nativeThemeValue: theme.value,
+                    previewKey: '',
+                    previewFileName: '',
+                    themeFileKey: '',
+                    themeFileName: '',
+                    themeFileSuggestedName: theme.name,
+                },
+            ],
+        });
+
+        changed = true;
+    }
+
+    if (changed) {
+        saveSettings();
+    }
+}
+
+/* =========================================================
+ * 真实主题文件导入
+ * ========================================================= */
+
+/**
+ * 尝试从主题 JSON 中获取主题名。
+ *
+ * 不同版本或第三方主题可能使用不同字段。
+ *
+ * @param {object} data
+ * @returns {string}
+ */
+function getSuggestedThemeName(data) {
+    const candidates = [
+        data?.name,
+        data?.theme_name,
+        data?.display_name,
+        data?.displayName,
+        data?.preset_name,
+        data?.presetName,
+    ];
+
+    for (const candidate of candidates) {
+        if (
+            typeof candidate === 'string' &&
+            candidate.trim()
+        ) {
+            return candidate.trim();
+        }
+    }
+
+    return '';
+}
+
+/**
+ * 等待原生主题导入完成。
+ *
+ * @param {string[]} oldValues
+ * @param {string} suggestedName
+ * @returns {Promise<string>}
+ */
+async function waitForImportedTheme(
+    oldValues,
+    suggestedName,
+) {
+    for (let attempt = 0; attempt < 50; attempt++) {
+        await delay(100);
+
+        const themes = getNativeThemes();
+        const currentValue = getCurrentThemeValue();
+
+        const newlyAdded = themes.find(
+            theme => !oldValues.includes(theme.value),
+        );
+
+        if (newlyAdded) {
+            return newlyAdded.value;
+        }
+
+        if (
+            suggestedName &&
+            themes.some(
+                theme =>
+                    theme.value === suggestedName ||
+                    theme.name === suggestedName,
+            )
+        ) {
+            const matched = themes.find(
+                theme =>
+                    theme.value === suggestedName ||
+                    theme.name === suggestedName,
+            );
+
+            return matched?.value || '';
+        }
+
+        if (
+            currentValue &&
+            !oldValues.includes(currentValue)
+        ) {
+            return currentValue;
+        }
+    }
+
+    return getCurrentThemeValue();
+}
+
+/**
+ * 把 IndexedDB 中的真实 JSON 文件交给 SillyTavern 原生导入器。
+ *
+ * @param {object} variant
+ * @returns {Promise<string>}
+ */
+async function importVariantThemeFile(variant) {
+    if (isImportingTheme) {
+        toastr.warning('正在导入另一个主题，请稍候。');
+        return '';
+    }
+
+    if (!variant.themeFileKey) {
+        return '';
+    }
+
+    const input = document.querySelector(
+        '#ui_preset_import_file',
+    );
+
+    if (!(input instanceof HTMLInputElement)) {
+        toastr.error('找不到 SillyTavern 原生主题导入控件。');
+        return '';
+    }
+
+    const blob = await readBlob(variant.themeFileKey);
+
+    if (!blob) {
+        toastr.error('找不到对应的真实主题文件。');
+        return '';
+    }
+
+    isImportingTheme = true;
+
+    try {
+        const oldValues = getNativeThemes().map(
+            theme => theme.value,
+        );
+
+        const fileName =
+            variant.themeFileName ||
+            'theme.json';
+
+        const file = new File(
+            [blob],
+            fileName,
+            {
+                type: 'application/json',
+            },
+        );
+
+        const transfer = new DataTransfer();
+        transfer.items.add(file);
+
+        input.value = '';
+        input.files = transfer.files;
+
+        input.dispatchEvent(new Event('change', {
+            bubbles: true,
+        }));
+
+        const importedValue = await waitForImportedTheme(
+            oldValues,
+            variant.themeFileSuggestedName,
+        );
+
+        return importedValue;
+    } catch (error) {
+        console.error(
+            '[Theme Manager] Theme import failed:',
+            error,
+        );
+
+        toastr.error(
+            `主题导入失败：${error?.message || '未知错误'}`,
+        );
+
+        return '';
+    } finally {
+        isImportingTheme = false;
+    }
+}
+
+/**
+ * 激活一个颜色变体。
+ *
+ * @param {object} group
+ * @param {object} variant
+ */
+async function activateVariant(group, variant) {
+    group.activeVariantId = variant.id;
+    saveSettings();
+
+    /*
+     * 已经安装的原生主题，直接切换。
+     */
+    if (
+        variant.nativeThemeValue &&
+        nativeThemeExists(variant.nativeThemeValue)
+    ) {
+        selectNativeTheme(variant.nativeThemeValue);
+        await renderGroups();
+        updateCurrentThemeDisplay();
+        return;
+    }
+
+    /*
+     * 原生主题不存在，但保存了真实 JSON 文件。
+     * 自动导入，然后记录导入后的原生主题值。
+     */
+    if (variant.themeFileKey) {
+        toastr.info(`正在载入“${variant.name}”主题文件……`);
+
+        const importedThemeValue =
+            await importVariantThemeFile(variant);
+
+        if (importedThemeValue) {
+            variant.nativeThemeValue =
+                importedThemeValue;
+
+            saveSettings();
+
+            selectNativeTheme(importedThemeValue);
+
+            toastr.success(
+                `已切换到“${variant.name}”。`,
+            );
+        } else {
+            toastr.warning(
+                '文件已交给 SillyTavern 导入，但未能自动确定主题名称。请在编辑器中手动关联原生主题。',
+            );
+        }
+
+        syncNativeThemesToGroups();
+        await renderGroups();
+        updateCurrentThemeDisplay();
+        return;
+    }
+
+    toastr.warning(
+        `“${variant.name}”尚未关联原生主题或主题 JSON 文件。`,
+    );
+
+    await renderGroups();
+}
+
+/* =========================================================
+ * 管理器 HTML
+ * ========================================================= */
+
+function createManagerHtml() {
+    return $(`
+        <div id="${MANAGER_ID}">
+            <div class="ntm-header">
+                <div class="ntm-title-area">
+                    <div class="ntm-main-icon">
+                        <i class="fa-solid fa-mobile-screen-button"></i>
+                    </div>
+
+                    <div>
+                        <h3>主题展示与色系管理器</h3>
+                        <div class="ntm-subtitle">
+                            每个色系都可以关联独立预览图和真实 Theme JSON
+                        </div>
+                    </div>
+                </div>
+
+                <div class="ntm-current-theme-box">
+                    <small>当前真实主题</small>
+                    <strong id="ntm_current_theme_name">读取中……</strong>
+                    <span id="ntm_current_theme_value">—</span>
+                </div>
+            </div>
+
+            <div class="ntm-toolbar">
+                <div class="ntm-search-box">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+
+                    <input
+                        id="ntm_search"
+                        class="text_pole"
+                        type="search"
+                        placeholder="搜索主题系列或色系……"
+                    >
+                </div>
+
+                <div
+                    id="ntm_add_group"
+                    class="menu_button menu_button_icon"
+                >
+                    <i class="fa-solid fa-folder-plus"></i>
+                    <span>新建主题系列</span>
+                </div>
+
+                <div
+                    id="ntm_sync_native"
+                    class="menu_button menu_button_icon"
+                >
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                    <span>同步原生主题</span>
+                </div>
+            </div>
+
+            <div class="ntm-hint">
+                <i class="fa-solid fa-circle-info"></i>
+                <span>
+                    点击卡片下方的颜色圆点，会同时切换预览图和对应的真实主题。
+                    点击右上角齿轮，可以上传预览图、上传主题 JSON，或关联现有原生主题。
+                </span>
+            </div>
+
+            <div id="ntm_groups_grid" class="ntm-groups-grid"></div>
+
+            <div id="ntm_empty" class="ntm-empty displayNone">
+                <i class="fa-solid fa-palette"></i>
+                <strong>暂无主题系列</strong>
+                <span>点击“同步原生主题”或“新建主题系列”。</span>
+            </div>
+        </div>
+    `);
+}
+
+/**
+ * 更新当前真实主题显示。
+ */
+function updateCurrentThemeDisplay() {
     if (!activeManager) {
         return;
     }
 
-    const grid = activeManager.find('#ntm_theme_grid').get(0);
-    const empty = activeManager.find('#ntm_empty_state');
-    const themes = getNativeThemes();
-    const keyword = getSearchKeyword();
+    const currentValue = getCurrentThemeValue();
+
+    const currentTheme = getNativeThemes().find(
+        theme => theme.value === currentValue,
+    );
+
+    activeManager
+        .find('#ntm_current_theme_name')
+        .text(currentTheme?.name || '未选择');
+
+    activeManager
+        .find('#ntm_current_theme_value')
+        .text(currentValue || '—');
+}
+
+/**
+ * 获取主题系列当前变体。
+ *
+ * @param {object} group
+ * @returns {object|null}
+ */
+function getActiveVariant(group) {
+    return group.variants.find(
+        variant => variant.id === group.activeVariantId,
+    ) ?? group.variants[0] ?? null;
+}
+
+/**
+ * 判断系列是否匹配搜索。
+ *
+ * @param {object} group
+ * @param {string} keyword
+ * @returns {boolean}
+ */
+function groupMatchesSearch(group, keyword) {
+    if (!keyword) {
+        return true;
+    }
+
+    if (
+        group.name.toLocaleLowerCase().includes(keyword)
+    ) {
+        return true;
+    }
+
+    return group.variants.some(variant =>
+        variant.name.toLocaleLowerCase().includes(keyword) ||
+        variant.nativeThemeValue
+            .toLocaleLowerCase()
+            .includes(keyword),
+    );
+}
+
+/**
+ * 渲染主题系列。
+ */
+async function renderGroups() {
+    if (!activeManager) {
+        return;
+    }
+
+    revokeObjectUrls();
+
+    const settings = getSettings();
+    const grid = activeManager
+        .find('#ntm_groups_grid')
+        .get(0);
+
+    const empty = activeManager.find('#ntm_empty');
 
     if (!grid) {
         return;
@@ -369,393 +901,906 @@ function renderThemeCards() {
 
     grid.innerHTML = '';
 
-    const filteredThemes = themes.filter(theme => {
-        if (!keyword) {
-            return true;
+    const keyword = String(
+        activeManager.find('#ntm_search').val() ?? '',
+    ).trim().toLocaleLowerCase();
+
+    const visibleGroups = settings.groups.filter(
+        group => groupMatchesSearch(group, keyword),
+    );
+
+    for (const group of visibleGroups) {
+        const activeVariant = getActiveVariant(group);
+
+        const card = document.createElement('article');
+
+        card.className = 'ntm-group-card';
+        card.dataset.groupId = group.id;
+
+        if (
+            activeVariant?.nativeThemeValue &&
+            activeVariant.nativeThemeValue ===
+                getCurrentThemeValue()
+        ) {
+            card.classList.add('ntm-group-card-current');
         }
 
-        return theme.name.toLocaleLowerCase().includes(keyword)
-            || theme.value.toLocaleLowerCase().includes(keyword);
-    });
+        const colorButtons = group.variants
+            .map(variant => {
+                const selected =
+                    variant.id === activeVariant?.id;
 
-    for (const theme of filteredThemes) {
-        grid.appendChild(createThemeCard(theme));
+                const actualThemeActive =
+                    variant.nativeThemeValue &&
+                    variant.nativeThemeValue ===
+                        getCurrentThemeValue();
+
+                return `
+                    <button
+                        type="button"
+                        class="
+                            ntm-color-dot
+                            ${selected ? 'ntm-color-dot-selected' : ''}
+                            ${actualThemeActive ? 'ntm-color-dot-current' : ''}
+                        "
+                        data-action="activate-variant"
+                        data-group-id="${escapeAttribute(group.id)}"
+                        data-variant-id="${escapeAttribute(variant.id)}"
+                        title="${escapeAttribute(variant.name)}"
+                        style="--ntm-dot-color: ${escapeAttribute(variant.color)}"
+                    >
+                        <span></span>
+                    </button>
+                `;
+            })
+            .join('');
+
+        card.innerHTML = `
+            <div class="ntm-preview-shell">
+                <div class="ntm-phone-preview">
+                    <div class="ntm-phone-speaker"></div>
+
+                    <div class="ntm-preview-content">
+                        <div class="ntm-preview-placeholder">
+                            <i class="fa-solid fa-image"></i>
+                            <span>上传竖屏预览图</span>
+                        </div>
+
+                        <img
+                            class="ntm-preview-image displayNone"
+                            alt="${escapeAttribute(group.name)}"
+                        >
+                    </div>
+                </div>
+
+                <div class="ntm-card-controls">
+                    <button
+                        type="button"
+                        class="menu_button ntm-card-icon-button"
+                        data-action="edit-group"
+                        data-group-id="${escapeAttribute(group.id)}"
+                        title="编辑主题系列"
+                    >
+                        <i class="fa-solid fa-gear"></i>
+                    </button>
+
+                    <button
+                        type="button"
+                        class="menu_button ntm-card-icon-button ntm-card-delete"
+                        data-action="delete-group"
+                        data-group-id="${escapeAttribute(group.id)}"
+                        title="删除主题系列"
+                    >
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </div>
+
+                <div class="ntm-preview-badge">
+                    ${
+                        activeVariant
+                            ? escapeHtml(activeVariant.name)
+                            : '无色系'
+                    }
+                </div>
+            </div>
+
+            <div class="ntm-group-info">
+                <h4 title="${escapeAttribute(group.name)}">
+                    ${escapeHtml(group.name)}
+                </h4>
+
+                <div class="ntm-group-theme-name">
+                    ${
+                        activeVariant?.nativeThemeValue
+                            ? escapeHtml(
+                                activeVariant.nativeThemeValue,
+                            )
+                            : activeVariant?.themeFileName
+                                ? escapeHtml(
+                                    activeVariant.themeFileName,
+                                )
+                                : '尚未关联真实主题'
+                    }
+                </div>
+
+                <div class="ntm-color-row">
+                    <div class="ntm-color-dots">
+                        ${colorButtons}
+                    </div>
+
+                    <button
+                        type="button"
+                        class="ntm-add-color-button"
+                        data-action="edit-group"
+                        data-group-id="${escapeAttribute(group.id)}"
+                        title="添加或编辑色系"
+                    >
+                        <i class="fa-solid fa-plus"></i>
+                    </button>
+                </div>
+
+                <button
+                    type="button"
+                    class="ntm-apply-button"
+                    data-action="activate-current"
+                    data-group-id="${escapeAttribute(group.id)}"
+                >
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    <span>应用这个色系</span>
+                </button>
+            </div>
+        `;
+
+        grid.appendChild(card);
+
+        if (activeVariant?.previewKey) {
+            const previewBlob = await readBlob(
+                activeVariant.previewKey,
+            );
+
+            if (previewBlob) {
+                const objectUrl =
+                    URL.createObjectURL(previewBlob);
+
+                activeObjectUrls.push(objectUrl);
+
+                const image = card.querySelector(
+                    '.ntm-preview-image',
+                );
+
+                const placeholder = card.querySelector(
+                    '.ntm-preview-placeholder',
+                );
+
+                if (image instanceof HTMLImageElement) {
+                    image.src = objectUrl;
+                    image.classList.remove('displayNone');
+                }
+
+                placeholder?.classList.add('displayNone');
+            }
+        }
     }
 
-    if (themes.length === 0) {
-        empty
-            .removeClass('displayNone')
-            .find('.ntm-empty-title')
-            .text('没有检测到主题');
-
-        empty
-            .find('.ntm-empty-description')
-            .text('请先打开“用户设置”，等待 SillyTavern 加载主题列表。');
-    } else if (filteredThemes.length === 0) {
-        empty
-            .removeClass('displayNone')
-            .find('.ntm-empty-title')
-            .text('没有搜索结果');
-
-        empty
-            .find('.ntm-empty-description')
-            .text('尝试使用其他主题名称进行搜索。');
+    if (visibleGroups.length === 0) {
+        empty.removeClass('displayNone');
     } else {
         empty.addClass('displayNone');
     }
 
-    activeManager
-        .find('#ntm_theme_count')
-        .text(String(themes.length));
-
-    updateManagerStatus();
+    updateCurrentThemeDisplay();
 }
 
-/**
- * 更新顶部当前主题信息。
- */
-function updateManagerStatus() {
-    if (!activeManager) {
-        return;
-    }
-
-    const currentTheme = getCurrentNativeTheme();
-
-    activeManager
-        .find('#ntm_current_theme')
-        .text(currentTheme?.name || '未检测到');
-
-    activeManager
-        .find('#ntm_current_theme_value')
-        .text(currentTheme?.value || '—');
-
-    activeManager
-        .find('#ntm_export_theme, #ntm_update_theme, #ntm_delete_theme')
-        .toggleClass('ntm-action-disabled', !currentTheme);
-}
+/* =========================================================
+ * 主题系列编辑器
+ * ========================================================= */
 
 /**
- * 构建管理器弹窗。
+ * 深度复制一个主题系列。
  *
+ * @param {object} group
+ * @returns {object}
+ */
+function cloneGroup(group) {
+    return structuredClone(group);
+}
+
+/**
+ * 创建新变体。
+ *
+ * @returns {object}
+ */
+function createEmptyVariant() {
+    return {
+        id: uuidv4(),
+        name: '新色系',
+        color: '#8b7cff',
+        nativeThemeValue: '',
+        previewKey: '',
+        previewFileName: '',
+        themeFileKey: '',
+        themeFileName: '',
+        themeFileSuggestedName: '',
+    };
+}
+
+/**
+ * 构建系列编辑器。
+ *
+ * @param {object} draft
  * @returns {JQuery<HTMLElement>}
  */
-function createManagerHtml() {
-    return $(`
-        <div id="${MANAGER_ID}">
-            <div class="ntm-manager-header">
-                <div class="ntm-manager-title-block">
-                    <div class="ntm-manager-icon">
-                        <i class="fa-solid fa-palette"></i>
-                    </div>
-
-                    <div>
-                        <h3 class="ntm-manager-title">
-                            SillyTavern 主题管理器
-                        </h3>
-
-                        <div class="ntm-manager-subtitle">
-                            读取并管理 SillyTavern 当前已安装的所有原生主题
-                        </div>
-                    </div>
-                </div>
-
-                <div class="ntm-current-theme-card">
-                    <div class="ntm-current-theme-label">
-                        当前主题
-                    </div>
-
-                    <div id="ntm_current_theme" class="ntm-current-theme-name">
-                        正在读取……
-                    </div>
-
-                    <div
-                        id="ntm_current_theme_value"
-                        class="ntm-current-theme-value"
-                    >
-                        —
-                    </div>
-                </div>
-            </div>
-
-            <div class="ntm-manager-toolbar">
-                <div class="ntm-search-wrapper">
-                    <i class="fa-solid fa-magnifying-glass"></i>
-
-                    <input
-                        id="ntm_theme_search"
-                        class="text_pole"
-                        type="search"
-                        placeholder="搜索主题……"
-                        autocomplete="off"
-                    >
-                </div>
-
-                <div class="ntm-theme-counter">
-                    共
-                    <strong id="ntm_theme_count">0</strong>
-                    个主题
-                </div>
-
-                <div class="ntm-toolbar-spacer"></div>
-
-                <div
-                    id="ntm_refresh_themes"
-                    class="menu_button menu_button_icon"
-                    title="刷新主题列表"
-                >
-                    <i class="fa-solid fa-arrows-rotate"></i>
-                    <span>刷新</span>
-                </div>
-            </div>
-
-            <div class="ntm-native-actions">
-                <div
-                    id="ntm_import_theme"
-                    class="menu_button menu_button_icon ntm-action"
-                    title="使用 SillyTavern 原生主题导入功能"
-                >
-                    <i class="fa-solid fa-file-import"></i>
-                    <span>导入主题</span>
-                </div>
-
-                <div
-                    id="ntm_export_theme"
-                    class="menu_button menu_button_icon ntm-action"
-                    title="导出当前主题"
-                >
-                    <i class="fa-solid fa-file-export"></i>
-                    <span>导出当前主题</span>
-                </div>
-
-                <div
-                    id="ntm_save_theme"
-                    class="menu_button menu_button_icon ntm-action"
-                    title="将当前 UI 设置保存为新主题"
-                >
-                    <i class="fa-solid fa-file-circle-plus"></i>
-                    <span>另存为新主题</span>
-                </div>
-
-                <div
-                    id="ntm_update_theme"
-                    class="menu_button menu_button_icon ntm-action"
-                    title="将当前 UI 设置保存到当前主题"
-                >
-                    <i class="fa-solid fa-save"></i>
-                    <span>更新当前主题</span>
-                </div>
-
-                <div
-                    id="ntm_delete_theme"
-                    class="menu_button menu_button_icon ntm-action ntm-delete-action"
-                    title="删除当前主题"
-                >
-                    <i class="fa-solid fa-trash-can"></i>
-                    <span>删除当前主题</span>
-                </div>
-            </div>
-
-            <div class="ntm-section-header">
+function createGroupEditor(draft) {
+    const editor = $(`
+        <div class="ntm-group-editor">
+            <div class="ntm-editor-heading">
                 <div>
-                    <h4>已安装主题</h4>
+                    <h3>编辑主题系列</h3>
                     <small>
-                        点击主题卡片即可通过 SillyTavern 原生主题系统切换
+                        一个系列可以包含多个颜色变体
                     </small>
                 </div>
             </div>
 
-            <div id="ntm_theme_grid" class="ntm-theme-grid"></div>
+            <label class="ntm-field">
+                <span>主题系列名称</span>
+                <input
+                    id="ntm_group_name"
+                    class="text_pole"
+                    type="text"
+                    value="${escapeAttribute(draft.name)}"
+                    placeholder="例如：Moonlight"
+                >
+            </label>
 
-            <div id="ntm_empty_state" class="ntm-empty-state displayNone">
-                <i class="fa-solid fa-palette"></i>
-
-                <div class="ntm-empty-title">
-                    没有检测到主题
+            <div class="ntm-editor-section-title">
+                <div>
+                    <strong>颜色变体</strong>
+                    <small>
+                        每个变体可关联一张预览图和一个真实主题
+                    </small>
                 </div>
 
-                <div class="ntm-empty-description">
-                    请等待 SillyTavern 完成主题加载。
+                <div
+                    id="ntm_add_variant"
+                    class="menu_button menu_button_icon"
+                >
+                    <i class="fa-solid fa-plus"></i>
+                    <span>添加色系</span>
                 </div>
             </div>
 
-            <div class="ntm-manager-footer">
-                <i class="fa-solid fa-circle-info"></i>
-
-                <span>
-                    这个管理器直接读取
-                    <code>#themes</code>
-                    ，不建立额外的主题数据库。
-                    导入、导出、保存和删除操作均调用 SillyTavern 原生功能。
-                </span>
-            </div>
+            <div id="ntm_variant_editor_list"></div>
         </div>
     `);
+
+    const list = editor.find(
+        '#ntm_variant_editor_list',
+    );
+
+    /**
+     * 重新渲染变体编辑器。
+     */
+    const renderVariantEditors = async () => {
+        list.empty();
+
+        const nativeThemes = getNativeThemes();
+
+        for (const variant of draft.variants) {
+            const nativeOptions = [
+                '<option value="">不关联已安装主题</option>',
+                ...nativeThemes.map(theme => `
+                    <option
+                        value="${escapeAttribute(theme.value)}"
+                        ${
+                            theme.value ===
+                            variant.nativeThemeValue
+                                ? 'selected'
+                                : ''
+                        }
+                    >
+                        ${escapeHtml(theme.name)}
+                    </option>
+                `),
+            ].join('');
+
+            const row = $(`
+                <div
+                    class="ntm-variant-editor"
+                    data-variant-id="${escapeAttribute(variant.id)}"
+                >
+                    <div class="ntm-variant-editor-top">
+                        <label class="ntm-color-input-wrap">
+                            <input
+                                class="ntm-variant-color"
+                                type="color"
+                                value="${escapeAttribute(variant.color)}"
+                            >
+                        </label>
+
+                        <label class="ntm-field ntm-variant-name-field">
+                            <span>色系名称</span>
+                            <input
+                                class="ntm-variant-name text_pole"
+                                type="text"
+                                value="${escapeAttribute(variant.name)}"
+                                placeholder="例如：紫色"
+                            >
+                        </label>
+
+                        <button
+                            type="button"
+                            class="menu_button ntm-remove-variant"
+                            title="删除色系"
+                        >
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </div>
+
+                    <div class="ntm-variant-editor-body">
+                        <div class="ntm-editor-preview-column">
+                            <div class="ntm-mini-phone">
+                                <div class="ntm-mini-phone-screen">
+                                    <div class="ntm-mini-placeholder">
+                                        <i class="fa-solid fa-image"></i>
+                                    </div>
+
+                                    <img
+                                        class="ntm-mini-preview-image displayNone"
+                                        alt=""
+                                    >
+                                </div>
+                            </div>
+
+                            <label class="menu_button menu_button_icon ntm-upload-label">
+                                <i class="fa-solid fa-image"></i>
+                                <span>上传竖屏预览图</span>
+
+                                <input
+                                    class="ntm-preview-file"
+                                    type="file"
+                                    accept="image/*"
+                                    hidden
+                                >
+                            </label>
+
+                            <small class="ntm-file-status ntm-preview-status">
+                                ${
+                                    variant.previewFileName
+                                        ? escapeHtml(
+                                            variant.previewFileName,
+                                        )
+                                        : '未上传预览图'
+                                }
+                            </small>
+                        </div>
+
+                        <div class="ntm-editor-link-column">
+                            <label class="ntm-field">
+                                <span>关联已安装的原生主题</span>
+
+                                <select class="ntm-native-theme-select text_pole">
+                                    ${nativeOptions}
+                                </select>
+                            </label>
+
+                            <div class="ntm-link-divider">
+                                <span>或者</span>
+                            </div>
+
+                            <label class="menu_button menu_button_icon ntm-upload-label">
+                                <i class="fa-solid fa-file-code"></i>
+                                <span>上传真实 Theme JSON</span>
+
+                                <input
+                                    class="ntm-theme-json-file"
+                                    type="file"
+                                    accept=".json,application/json"
+                                    hidden
+                                >
+                            </label>
+
+                            <div class="ntm-json-file-info">
+                                <strong>已保存文件：</strong>
+                                <span class="ntm-theme-file-status">
+                                    ${
+                                        variant.themeFileName
+                                            ? escapeHtml(
+                                                variant.themeFileName,
+                                            )
+                                            : '未上传'
+                                    }
+                                </span>
+                            </div>
+
+                            <small>
+                                如果关联的原生主题不存在，点击该颜色时会自动导入此 JSON。
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            `);
+
+            list.append(row);
+
+            const image = row.find(
+                '.ntm-mini-preview-image',
+            ).get(0);
+
+            const placeholder = row.find(
+                '.ntm-mini-placeholder',
+            );
+
+            if (
+                variant.previewKey &&
+                image instanceof HTMLImageElement
+            ) {
+                const previewBlob = await readBlob(
+                    variant.previewKey,
+                );
+
+                if (previewBlob) {
+                    const objectUrl =
+                        URL.createObjectURL(previewBlob);
+
+                    activeObjectUrls.push(objectUrl);
+
+                    image.src = objectUrl;
+                    image.classList.remove('displayNone');
+                    placeholder.addClass('displayNone');
+                }
+            }
+
+            row.find('.ntm-variant-name').on(
+                'input',
+                function () {
+                    variant.name = String(
+                        $(this).val() ?? '',
+                    );
+                },
+            );
+
+            row.find('.ntm-variant-color').on(
+                'input',
+                function () {
+                    variant.color = String(
+                        $(this).val() ?? '#8b7cff',
+                    );
+                },
+            );
+
+            row.find('.ntm-native-theme-select').on(
+                'change',
+                function () {
+                    variant.nativeThemeValue = String(
+                        $(this).val() ?? '',
+                    );
+                },
+            );
+
+            row.find('.ntm-preview-file').on(
+                'change',
+                async function () {
+                    const input =
+                        this instanceof HTMLInputElement
+                            ? this
+                            : null;
+
+                    const file = input?.files?.[0];
+
+                    if (!file) {
+                        return;
+                    }
+
+                    if (!file.type.startsWith('image/')) {
+                        toastr.error('请选择图片文件。');
+                        return;
+                    }
+
+                    const key =
+                        variant.previewKey ||
+                        `preview:${uuidv4()}`;
+
+                    await saveBlob(key, file);
+
+                    variant.previewKey = key;
+                    variant.previewFileName = file.name;
+
+                    const objectUrl =
+                        URL.createObjectURL(file);
+
+                    activeObjectUrls.push(objectUrl);
+
+                    if (image instanceof HTMLImageElement) {
+                        image.src = objectUrl;
+                        image.classList.remove('displayNone');
+                    }
+
+                    placeholder.addClass('displayNone');
+
+                    row.find('.ntm-preview-status')
+                        .text(file.name);
+
+                    toastr.success('预览图已读取。');
+                },
+            );
+
+            row.find('.ntm-theme-json-file').on(
+                'change',
+                async function () {
+                    const input =
+                        this instanceof HTMLInputElement
+                            ? this
+                            : null;
+
+                    const file = input?.files?.[0];
+
+                    if (!file) {
+                        return;
+                    }
+
+                    try {
+                        const text = await file.text();
+                        const parsed = JSON.parse(text);
+
+                        const key =
+                            variant.themeFileKey ||
+                            `theme:${uuidv4()}`;
+
+                        await saveBlob(
+                            key,
+                            new Blob(
+                                [text],
+                                {
+                                    type: 'application/json',
+                                },
+                            ),
+                        );
+
+                        variant.themeFileKey = key;
+                        variant.themeFileName = file.name;
+                        variant.themeFileSuggestedName =
+                            getSuggestedThemeName(parsed);
+
+                        row.find('.ntm-theme-file-status')
+                            .text(file.name);
+
+                        toastr.success(
+                            '真实主题文件已保存。',
+                        );
+                    } catch (error) {
+                        console.error(error);
+                        toastr.error(
+                            '这不是有效的 JSON 主题文件。',
+                        );
+                    }
+                },
+            );
+
+            row.find('.ntm-remove-variant').on(
+                'click',
+                async () => {
+                    if (draft.variants.length <= 1) {
+                        toastr.warning(
+                            '每个主题系列至少保留一个色系。',
+                        );
+                        return;
+                    }
+
+                    const confirmed =
+                        await callGenericPopup(
+                            `确定删除色系“${escapeHtml(variant.name)}”吗？`,
+                            POPUP_TYPE.CONFIRM,
+                            '',
+                            {
+                                okButton: '删除',
+                                cancelButton: '取消',
+                            },
+                        );
+
+                    if (!confirmed) {
+                        return;
+                    }
+
+                    draft.variants =
+                        draft.variants.filter(
+                            item =>
+                                item.id !== variant.id,
+                        );
+
+                    if (
+                        draft.activeVariantId === variant.id
+                    ) {
+                        draft.activeVariantId =
+                            draft.variants[0]?.id || '';
+                    }
+
+                    await renderVariantEditors();
+                },
+            );
+        }
+    };
+
+    editor.find('#ntm_add_variant').on(
+        'click',
+        async () => {
+            const variant = createEmptyVariant();
+
+            draft.variants.push(variant);
+            draft.activeVariantId =
+                draft.activeVariantId || variant.id;
+
+            await renderVariantEditors();
+        },
+    );
+
+    renderVariantEditors();
+
+    editor.data('draft', draft);
+
+    return editor;
 }
 
 /**
- * 点击 SillyTavern 原生控制按钮。
+ * 打开主题系列编辑器。
  *
- * @param {string} selector
- * @param {string} missingMessage
- * @returns {boolean}
+ * @param {object} group
+ * @returns {Promise<boolean>}
  */
-function clickNativeControl(selector, missingMessage) {
-    const control = document.querySelector(selector);
+async function editGroup(group) {
+    const draft = cloneGroup(group);
+    const editor = createGroupEditor(draft);
 
-    if (!(control instanceof HTMLElement)) {
-        toastr.error(missingMessage);
+    const result = await callGenericPopup(
+        editor,
+        POPUP_TYPE.CONFIRM,
+        '',
+        {
+            wide: true,
+            large: true,
+            allowVerticalScrolling: true,
+            okButton: '保存',
+            cancelButton: '取消',
+        },
+    );
+
+    if (!result) {
         return false;
     }
 
-    nativeOperationRunning = true;
-    control.click();
+    draft.name = String(
+        editor.find('#ntm_group_name').val() ?? '',
+    ).trim() || '未命名主题系列';
 
-    /*
-     * 原生操作可能弹出输入窗口或文件选择器。
-     * 稍后解除操作状态并刷新。
-     */
-    window.setTimeout(() => {
-        nativeOperationRunning = false;
-        renderThemeCards();
-    }, 500);
+    if (draft.variants.length === 0) {
+        toastr.error('主题系列至少需要一个色系。');
+        return false;
+    }
+
+    if (
+        !draft.variants.some(
+            variant =>
+                variant.id === draft.activeVariantId,
+        )
+    ) {
+        draft.activeVariantId =
+            draft.variants[0].id;
+    }
+
+    Object.assign(group, draft);
+
+    saveSettings();
+    await renderGroups();
+
+    toastr.success('主题系列已保存。');
 
     return true;
 }
 
-/**
- * 绑定弹窗事件。
- *
- * @param {JQuery<HTMLElement>} manager
- */
-function bindManagerEvents(manager) {
-    manager.find('#ntm_theme_search').on('input', () => {
-        renderThemeCards();
-    });
+/* =========================================================
+ * 管理器事件
+ * ========================================================= */
 
-    manager.find('#ntm_refresh_themes').on('click', () => {
-        renderThemeCards();
-        toastr.success('主题列表已刷新。');
-    });
-
-    manager.find('#ntm_import_theme').on('click', () => {
-        clickNativeControl(
-            '#ui_preset_import_button',
-            '找不到 SillyTavern 原生主题导入按钮。',
-        );
-    });
-
-    manager.find('#ntm_export_theme').on('click', () => {
-        const currentTheme = getCurrentNativeTheme();
-
-        if (!currentTheme) {
-            toastr.warning('当前没有选中的主题。');
-            return;
-        }
-
-        clickNativeControl(
-            '#ui_preset_export_button',
-            '找不到 SillyTavern 原生主题导出按钮。',
-        );
-    });
-
-    manager.find('#ntm_save_theme').on('click', () => {
-        clickNativeControl(
-            '#ui-preset-save-button',
-            '找不到 SillyTavern 原生主题保存按钮。',
-        );
-    });
-
-    manager.find('#ntm_update_theme').on('click', () => {
-        const currentTheme = getCurrentNativeTheme();
-
-        if (!currentTheme) {
-            toastr.warning('当前没有选中的主题。');
-            return;
-        }
-
-        clickNativeControl(
-            '#ui-preset-update-button',
-            '找不到 SillyTavern 原生主题更新按钮。',
-        );
-    });
-
-    manager.find('#ntm_delete_theme').on('click', () => {
-        const currentTheme = getCurrentNativeTheme();
-
-        if (!currentTheme) {
-            toastr.warning('当前没有选中的主题。');
-            return;
-        }
-
-        clickNativeControl(
-            '#ui-preset-delete-button',
-            '找不到 SillyTavern 原生主题删除按钮。',
-        );
-    });
+function findGroup(groupId) {
+    return getSettings().groups.find(
+        group => group.id === groupId,
+    ) ?? null;
 }
 
-/**
- * 监听 #themes 中 option 的新增、删除和更新。
- */
-function observeNativeThemeSelect() {
-    const select = getNativeThemeSelect();
+function findVariant(group, variantId) {
+    return group?.variants.find(
+        variant => variant.id === variantId,
+    ) ?? null;
+}
+
+function bindManagerEvents(manager) {
+    manager.find('#ntm_search').on(
+        'input',
+        () => renderGroups(),
+    );
+
+    manager.find('#ntm_sync_native').on(
+        'click',
+        async () => {
+            syncNativeThemesToGroups();
+            await renderGroups();
+
+            toastr.success('已同步原生主题列表。');
+        },
+    );
+
+    manager.find('#ntm_add_group').on(
+        'click',
+        async () => {
+            const variant = createEmptyVariant();
+
+            const group = {
+                id: uuidv4(),
+                name: '新主题系列',
+                activeVariantId: variant.id,
+                variants: [variant],
+            };
+
+            const saved = await editGroup(group);
+
+            if (!saved) {
+                return;
+            }
+
+            getSettings().groups.push(group);
+            saveSettings();
+
+            await renderGroups();
+        },
+    );
+
+    manager.find('#ntm_groups_grid').on(
+        'click',
+        async event => {
+            const target = event.target instanceof Element
+                ? event.target.closest('[data-action]')
+                : null;
+
+            if (!(target instanceof HTMLElement)) {
+                return;
+            }
+
+            const action = target.dataset.action;
+            const groupId = target.dataset.groupId;
+            const variantId = target.dataset.variantId;
+
+            const group = findGroup(groupId);
+
+            if (!group) {
+                return;
+            }
+
+            if (action === 'activate-variant') {
+                const variant = findVariant(
+                    group,
+                    variantId,
+                );
+
+                if (variant) {
+                    await activateVariant(
+                        group,
+                        variant,
+                    );
+                }
+
+                return;
+            }
+
+            if (action === 'activate-current') {
+                const variant =
+                    getActiveVariant(group);
+
+                if (variant) {
+                    await activateVariant(
+                        group,
+                        variant,
+                    );
+                }
+
+                return;
+            }
+
+            if (action === 'edit-group') {
+                await editGroup(group);
+                return;
+            }
+
+            if (action === 'delete-group') {
+                const confirmed =
+                    await callGenericPopup(
+                        `确定删除主题系列“${escapeHtml(group.name)}”吗？`,
+                        POPUP_TYPE.CONFIRM,
+                        '',
+                        {
+                            okButton: '删除',
+                            cancelButton: '取消',
+                        },
+                    );
+
+                if (!confirmed) {
+                    return;
+                }
+
+                const settings = getSettings();
+
+                settings.groups =
+                    settings.groups.filter(
+                        item => item.id !== group.id,
+                    );
+
+                saveSettings();
+                await renderGroups();
+
+                toastr.success('主题系列已删除。');
+            }
+        },
+    );
+}
+
+/* =========================================================
+ * 打开管理器
+ * ========================================================= */
+
+function observeThemeSelect() {
+    const select = getThemeSelect();
 
     if (!select) {
         return;
     }
 
-    if (themeSelectObserver) {
-        themeSelectObserver.disconnect();
-    }
+    themeSelectObserver?.disconnect();
 
-    themeSelectObserver = new MutationObserver(() => {
-        if (nativeOperationRunning) {
-            return;
-        }
+    themeSelectObserver = new MutationObserver(
+        async () => {
+            syncNativeThemesToGroups();
 
-        renderThemeCards();
-    });
+            if (activeManager) {
+                await renderGroups();
+            }
+        },
+    );
 
     themeSelectObserver.observe(select, {
         childList: true,
         subtree: true,
         attributes: true,
-        characterData: true,
     });
 
     select.addEventListener('change', () => {
-        window.setTimeout(() => {
-            renderThemeCards();
+        window.setTimeout(async () => {
+            if (activeManager) {
+                await renderGroups();
+            }
         }, 0);
     });
 }
 
-/**
- * 打开主题管理器。
- */
 async function openThemeManager() {
-    /*
-     * 避免重复打开。
-     */
     if (document.getElementById(MANAGER_ID)) {
         return;
     }
 
-    const select = getNativeThemeSelect();
-
-    if (!select) {
+    if (!getThemeSelect()) {
         toastr.warning(
-            'SillyTavern 的主题列表还没有加载完成，请稍后再试。',
+            'SillyTavern 主题列表尚未加载完成，请稍后再试。',
         );
         return;
     }
+
+    syncNativeThemesToGroups();
 
     const manager = createManagerHtml();
     activeManager = manager;
 
     bindManagerEvents(manager);
-    renderThemeCards();
-    observeNativeThemeSelect();
+    observeThemeSelect();
+
+    await renderGroups();
 
     try {
         await callGenericPopup(
@@ -771,22 +1816,17 @@ async function openThemeManager() {
     } finally {
         activeManager = null;
 
-        if (themeSelectObserver) {
-            themeSelectObserver.disconnect();
-            themeSelectObserver = null;
-        }
+        themeSelectObserver?.disconnect();
+        themeSelectObserver = null;
+
+        revokeObjectUrls();
     }
 }
 
-/**
- * 创建入口按钮。
- *
- * 使用 div 而不是 button，避免 SillyTavern 对原生 button
- * 应用 disabled / opacity 样式而导致整个入口看起来是灰色。
- *
- * @param {string} id
- * @returns {HTMLDivElement}
- */
+/* =========================================================
+ * 两个入口注入
+ * ========================================================= */
+
 function createEntryButton(id) {
     const button = document.createElement('div');
 
@@ -794,25 +1834,23 @@ function createEntryButton(id) {
     button.className =
         'menu_button menu_button_icon ntm-entry-button';
 
-    button.title = '打开 SillyTavern 主题管理器';
-
     button.innerHTML = `
-        <i class="fa-solid fa-palette"></i>
-        <span>主题管理器</span>
+        <i class="fa-solid fa-swatchbook"></i>
+        <span>主题展示管理器</span>
     `;
+
+    button.title = '打开主题展示与色系管理器';
 
     button.addEventListener('click', event => {
         event.preventDefault();
         event.stopPropagation();
+
         openThemeManager();
     });
 
     return button;
 }
 
-/**
- * 注入到用户设置的 Theme 区域。
- */
 function injectIntoThemeSettings() {
     if (document.getElementById(SETTINGS_ENTRY_ID)) {
         return true;
@@ -831,70 +1869,53 @@ function injectIntoThemeSettings() {
     wrapper.id = SETTINGS_ENTRY_ID;
     wrapper.className = 'ntm-settings-entry';
 
-    const button = createEntryButton(
-        `${SETTINGS_ENTRY_ID}_button`,
+    wrapper.appendChild(
+        createEntryButton(
+            `${SETTINGS_ENTRY_ID}_button`,
+        ),
     );
 
-    wrapper.appendChild(button);
-
-    /*
-     * 插入到：
-     *
-     * .flex-container.flexnowrap.alignitemscenter
-     *
-     * 的下面。
-     */
-    anchor.insertAdjacentElement('afterend', wrapper);
+    anchor.insertAdjacentElement(
+        'afterend',
+        wrapper,
+    );
 
     return true;
 }
 
-/**
- * 注入到扩展菜单。
- *
- * 不同版本/第三方主题可能使用：
- *
- * #extensionsMenu
- * #extensionsMenuButton
- *
- * 所以分别兼容。
- */
 function injectIntoExtensionsMenu() {
     if (document.getElementById(EXTENSIONS_ENTRY_ID)) {
         return true;
     }
 
-    /*
-     * 优先寻找真正的扩展菜单。
-     */
-    const menu = document.querySelector('#extensionsMenu');
+    const menu = document.querySelector(
+        '#extensionsMenu',
+    );
 
     if (menu instanceof HTMLElement) {
         const entry = document.createElement('div');
 
         entry.id = EXTENSIONS_ENTRY_ID;
         entry.className =
-            'list-group-item interactable ntm-extension-menu-entry';
+            'list-group-item interactable ntm-extension-entry';
 
         entry.innerHTML = `
-            <i class="fa-solid fa-palette fa-fw"></i>
-            <span>主题管理器</span>
+            <i class="fa-solid fa-swatchbook fa-fw"></i>
+            <span>主题展示管理器</span>
         `;
 
         entry.addEventListener('click', event => {
             event.preventDefault();
             event.stopPropagation();
+
             openThemeManager();
         });
 
         menu.appendChild(entry);
+
         return true;
     }
 
-    /*
-     * 如果你的版本把 #extensionsMenuButton 当成菜单容器，
-     * 则注入其内部。
-     */
     const menuButton = document.querySelector(
         '#extensionsMenuButton',
     );
@@ -903,39 +1924,20 @@ function injectIntoExtensionsMenu() {
         return false;
     }
 
-    const entry = document.createElement('div');
-
-    entry.id = EXTENSIONS_ENTRY_ID;
-    entry.className =
-        'menu_button menu_button_icon ntm-extension-menu-entry';
-
-    entry.innerHTML = `
-        <i class="fa-solid fa-palette fa-fw"></i>
-        <span>主题管理器</span>
-    `;
-
-    entry.addEventListener('click', event => {
-        event.preventDefault();
-        event.stopPropagation();
-        openThemeManager();
-    });
+    const entry = createEntryButton(
+        EXTENSIONS_ENTRY_ID,
+    );
 
     menuButton.appendChild(entry);
 
     return true;
 }
 
-/**
- * 注入全部入口。
- */
 function injectAllEntries() {
     injectIntoThemeSettings();
     injectIntoExtensionsMenu();
 }
 
-/**
- * 监听 SillyTavern 动态 DOM。
- */
 function startDomObserver() {
     injectAllEntries();
 
@@ -950,16 +1952,7 @@ function startDomObserver() {
 
         requestAnimationFrame(() => {
             scheduled = false;
-
             injectAllEntries();
-
-            if (
-                activeManager
-                && !themeSelectObserver
-                && getNativeThemeSelect()
-            ) {
-                observeNativeThemeSelect();
-            }
         });
     });
 
@@ -969,14 +1962,27 @@ function startDomObserver() {
     });
 }
 
-/**
- * 初始化。
- */
+/* =========================================================
+ * 初始化
+ * ========================================================= */
+
 function init() {
+    getSettings();
     startDomObserver();
 
+    const waitForThemes = window.setInterval(() => {
+        if (!getThemeSelect()) {
+            return;
+        }
+
+        window.clearInterval(waitForThemes);
+
+        syncNativeThemesToGroups();
+        observeThemeSelect();
+    }, 500);
+
     console.log(
-        `[${EXTENSION_NAME}] Native theme manager initialized.`,
+        '[Theme Manager] Theme showcase manager initialized.',
     );
 }
 
