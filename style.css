@@ -1,219 +1,629 @@
-/* =========================
-   美化管理器入口
-   ========================= */
+/* =========================================================
+   SillyTavern 原生主题管理器
+   ========================================================= */
 
-.bm-settings-entry-row {
+/* ---------------------------------------------------------
+   入口
+   --------------------------------------------------------- */
+
+.ntm-settings-entry {
     display: flex;
-    align-items: center;
+    width: 100%;
     margin-top: 8px;
-    margin-bottom: 4px;
 }
 
-.bm-settings-entry-row .bm-entry-button {
-    width: 100%;
+.ntm-settings-entry .ntm-entry-button {
     justify-content: center;
-}
-
-.bm-entry-button {
-    gap: 6px;
-}
-
-.bm-entry-button-compact {
-    width: auto;
-}
-
-.bm-extension-menu-fallback {
-    position: relative;
-    z-index: 10;
-}
-
-.bm-extensions-menu-entry {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    cursor: pointer;
-}
-
-.bm-extensions-menu-entry:hover {
-    background-color: var(--white20a);
-}
-
-/* =========================
-   美化管理器弹窗
-   ========================= */
-
-#beautify_manager_popup {
-    display: flex;
-    flex-direction: column;
     width: 100%;
-    min-width: min(760px, 85vw);
-    gap: 12px;
+    min-height: 32px;
 }
 
-#beautify_manager_popup button {
-    color: inherit;
-}
-
-.bm-header {
+.ntm-entry-button {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    padding-bottom: 10px;
-    border-bottom: 1px solid var(--SmartThemeBorderColor);
+    gap: 7px;
 }
 
-.bm-title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 0;
-}
-
-.bm-title i {
+.ntm-entry-button i,
+.ntm-extension-menu-entry i {
     color: var(--SmartThemeQuoteColor);
 }
 
-.bm-subtitle {
-    margin-top: 4px;
-    font-size: 0.9em;
-    opacity: 0.7;
-}
-
-.bm-master-switch {
-    flex-shrink: 0;
-}
-
-.bm-toolbar,
-.bm-import-export-row,
-.bm-footer,
-.bm-footer-actions,
-.bm-editor-header {
+.ntm-extension-menu-entry {
     display: flex;
     align-items: center;
     gap: 8px;
+    cursor: pointer;
 }
 
-.bm-toolbar {
-    flex-wrap: wrap;
+/*
+ * 防止入口继承某些父容器的灰色/不可操作外观。
+ */
+.ntm-entry-button,
+.ntm-extension-menu-entry {
+    opacity: 1 !important;
+    filter: none !important;
+    pointer-events: auto !important;
 }
 
-.bm-toolbar #bm_preset_select {
-    flex: 1 1 260px;
-    min-width: 200px;
-    margin: 0;
-}
+/* ---------------------------------------------------------
+   管理器主体
+   --------------------------------------------------------- */
 
-.bm-import-export-row {
-    flex-wrap: wrap;
-}
-
-.bm-import-export-row .expander {
-    flex: 1;
-}
-
-.bm-editor-block {
+#native_theme_manager_popup {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    width: 100%;
+    min-width: min(900px, 86vw);
+    gap: 14px;
+    color: var(--SmartThemeBodyColor);
+    opacity: 1 !important;
+    filter: none !important;
 }
 
-.bm-editor-header {
+.ntm-manager-header {
+    display: flex;
+    align-items: stretch;
     justify-content: space-between;
+    gap: 16px;
 }
 
-.bm-save-state {
-    color: #72d572;
+.ntm-manager-title-block {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 12px;
+}
+
+.ntm-manager-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 48px;
+    width: 48px;
+    height: 48px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 14px;
+    color: var(--SmartThemeQuoteColor);
+    background:
+        linear-gradient(
+            135deg,
+            color-mix(
+                in srgb,
+                var(--SmartThemeQuoteColor) 22%,
+                transparent
+            ),
+            color-mix(
+                in srgb,
+                var(--SmartThemeBlurTintColor) 80%,
+                transparent
+            )
+        );
+    box-shadow: 0 5px 18px rgb(0 0 0 / 15%);
+    font-size: 1.4em;
+}
+
+.ntm-manager-title {
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ntm-manager-subtitle {
+    margin-top: 4px;
+    opacity: 0.68;
     font-size: 0.9em;
 }
 
-.bm-save-state.bm-unsaved {
-    color: #ffc857;
+.ntm-current-theme-card {
+    display: flex;
+    flex: 0 1 280px;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 210px;
+    padding: 10px 14px;
+    overflow: hidden;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 12px;
+    background: color-mix(
+        in srgb,
+        var(--SmartThemeBlurTintColor) 88%,
+        transparent
+    );
 }
 
-#bm_css_editor {
-    width: 100%;
-    min-height: 360px;
-    resize: vertical;
-    tab-size: 4;
-    white-space: pre;
-    overflow: auto;
-    line-height: 1.45;
+.ntm-current-theme-label {
+    opacity: 0.62;
+    font-size: 0.76em;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.ntm-current-theme-name {
+    margin-top: 2px;
+    overflow: hidden;
+    color: var(--SmartThemeQuoteColor);
+    font-size: 1.05em;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ntm-current-theme-value {
+    margin-top: 2px;
+    overflow: hidden;
+    opacity: 0.56;
     font-family:
         "Noto Sans Mono",
         Consolas,
-        Monaco,
         monospace;
+    font-size: 0.72em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.bm-footer {
-    justify-content: space-between;
+/* ---------------------------------------------------------
+   搜索和工具栏
+   --------------------------------------------------------- */
+
+.ntm-manager-toolbar {
+    display: flex;
+    align-items: center;
     flex-wrap: wrap;
-    padding-top: 10px;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 12px;
+    background: color-mix(
+        in srgb,
+        var(--SmartThemeBlurTintColor) 74%,
+        transparent
+    );
+}
+
+.ntm-search-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: 1 1 280px;
+    min-width: 200px;
+}
+
+.ntm-search-wrapper > i {
+    position: absolute;
+    left: 11px;
+    z-index: 1;
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+.ntm-search-wrapper #ntm_theme_search {
+    width: 100%;
+    margin: 0;
+    padding-left: 34px;
+}
+
+.ntm-theme-counter {
+    opacity: 0.72;
+    white-space: nowrap;
+}
+
+.ntm-toolbar-spacer {
+    flex: 1 1 auto;
+}
+
+/* ---------------------------------------------------------
+   原生功能按钮
+   --------------------------------------------------------- */
+
+.ntm-native-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.ntm-action {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 30px;
+}
+
+.ntm-action-disabled {
+    opacity: 0.42 !important;
+}
+
+.ntm-delete-action {
+    color: #ff8585;
+}
+
+.ntm-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 4px;
     border-top: 1px solid var(--SmartThemeBorderColor);
 }
 
-.bm-help {
-    flex: 1 1 300px;
-    font-size: 0.9em;
-    opacity: 0.75;
+.ntm-section-header h4 {
+    margin: 10px 0 2px;
 }
 
-.bm-primary-button {
-    border-color: var(--SmartThemeQuoteColor) !important;
+.ntm-section-header small {
+    opacity: 0.62;
 }
 
-.bm-danger-button {
-    color: #ff7676 !important;
+/* ---------------------------------------------------------
+   主题卡片
+   --------------------------------------------------------- */
+
+.ntm-theme-grid {
+    display: grid;
+    grid-template-columns:
+        repeat(
+            auto-fill,
+            minmax(min(210px, 100%), 1fr)
+        );
+    gap: 11px;
+    width: 100%;
 }
 
-#beautify_manager_popup button:disabled,
-#beautify_manager_popup select:disabled,
-#beautify_manager_popup textarea:disabled {
+.ntm-theme-card {
+    --ntm-theme-hue: 260;
+
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 14px;
+    color: var(--SmartThemeBodyColor);
+    background: color-mix(
+        in srgb,
+        var(--SmartThemeBlurTintColor) 84%,
+        rgb(20 20 24 / 70%)
+    );
+    box-shadow: 0 4px 14px rgb(0 0 0 / 10%);
+    cursor: pointer;
+    outline: none;
+    transition:
+        transform 140ms ease,
+        border-color 140ms ease,
+        box-shadow 140ms ease;
+}
+
+.ntm-theme-card:hover,
+.ntm-theme-card:focus-visible {
+    z-index: 1;
+    border-color: var(--SmartThemeQuoteColor);
+    box-shadow:
+        0 8px 24px rgb(0 0 0 / 22%),
+        0 0 0 1px
+        color-mix(
+            in srgb,
+            var(--SmartThemeQuoteColor) 35%,
+            transparent
+        );
+    transform: translateY(-2px);
+}
+
+.ntm-theme-card-selected {
+    border-color: var(--SmartThemeQuoteColor);
+    box-shadow:
+        0 8px 24px rgb(0 0 0 / 20%),
+        0 0 0 2px
+        color-mix(
+            in srgb,
+            var(--SmartThemeQuoteColor) 35%,
+            transparent
+        );
+}
+
+.ntm-theme-card-disabled {
     cursor: not-allowed;
-    opacity: 0.45;
+    opacity: 0.48;
+    transform: none !important;
 }
 
-/* =========================
+.ntm-theme-preview {
+    position: relative;
+    height: 112px;
+    overflow: hidden;
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+    background:
+        radial-gradient(
+            circle at 20% 20%,
+            hsl(
+                var(--ntm-theme-hue)
+                82%
+                64%
+                / 42%
+            ),
+            transparent 42%
+        ),
+        radial-gradient(
+            circle at 85% 80%,
+            hsl(
+                calc(var(--ntm-theme-hue) + 75)
+                76%
+                57%
+                / 34%
+            ),
+            transparent 45%
+        ),
+        linear-gradient(
+            135deg,
+            hsl(
+                var(--ntm-theme-hue)
+                28%
+                14%
+            ),
+            hsl(
+                calc(var(--ntm-theme-hue) + 35)
+                24%
+                8%
+            )
+        );
+}
+
+.ntm-theme-preview-background {
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(
+            120deg,
+            transparent 20%,
+            rgb(255 255 255 / 5%) 50%,
+            transparent 80%
+        );
+}
+
+.ntm-theme-preview-panel {
+    position: absolute;
+    right: 14px;
+    bottom: 13px;
+    left: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 12px;
+    border: 1px solid rgb(255 255 255 / 14%);
+    border-radius: 10px;
+    background: rgb(15 15 19 / 62%);
+    box-shadow: 0 8px 22px rgb(0 0 0 / 24%);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.ntm-theme-preview-line {
+    width: 56%;
+    height: 4px;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 35%);
+}
+
+.ntm-theme-preview-line-long {
+    width: 82%;
+}
+
+.ntm-theme-preview-button {
+    width: 34%;
+    height: 12px;
+    margin-top: 2px;
+    border-radius: 4px;
+    background:
+        hsl(
+            var(--ntm-theme-hue)
+            78%
+            65%
+            / 75%
+        );
+}
+
+.ntm-theme-initial {
+    position: absolute;
+    top: 10px;
+    left: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 29px;
+    height: 29px;
+    border: 1px solid rgb(255 255 255 / 18%);
+    border-radius: 9px;
+    color: white;
+    background: rgb(0 0 0 / 28%);
+    font-weight: 700;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+
+.ntm-theme-selected-icon {
+    position: absolute;
+    top: 10px;
+    right: 11px;
+    display: none;
+    color: white;
+    filter: drop-shadow(0 2px 4px rgb(0 0 0 / 60%));
+    font-size: 1.18em;
+}
+
+.ntm-theme-card-selected .ntm-theme-selected-icon {
+    display: block;
+}
+
+.ntm-theme-info {
+    min-width: 0;
+    padding: 11px 12px 7px;
+}
+
+.ntm-theme-name {
+    overflow: hidden;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ntm-theme-value {
+    margin-top: 3px;
+    overflow: hidden;
+    opacity: 0.5;
+    font-family:
+        "Noto Sans Mono",
+        Consolas,
+        monospace;
+    font-size: 0.72em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ntm-theme-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: auto;
+    padding: 7px 12px 10px;
+    opacity: 0.58;
+    font-size: 0.78em;
+}
+
+.ntm-theme-card-selected .ntm-theme-card-footer {
+    color: var(--SmartThemeQuoteColor);
+    opacity: 1;
+}
+
+/* ---------------------------------------------------------
+   空状态与底部说明
+   --------------------------------------------------------- */
+
+.ntm-empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    min-height: 220px;
+    padding: 30px;
+    border: 1px dashed var(--SmartThemeBorderColor);
+    border-radius: 14px;
+    text-align: center;
+}
+
+.ntm-empty-state > i {
+    margin-bottom: 12px;
+    color: var(--SmartThemeQuoteColor);
+    opacity: 0.7;
+    font-size: 2.2em;
+}
+
+.ntm-empty-title {
+    font-size: 1.08em;
+    font-weight: 700;
+}
+
+.ntm-empty-description {
+    max-width: 420px;
+    margin-top: 5px;
+    opacity: 0.62;
+}
+
+.ntm-manager-footer {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 10px;
+    opacity: 0.72;
+    font-size: 0.86em;
+}
+
+.ntm-manager-footer > i {
+    margin-top: 2px;
+    color: var(--SmartThemeQuoteColor);
+}
+
+/* ---------------------------------------------------------
+   明确覆盖“全灰”情况
+   --------------------------------------------------------- */
+
+#native_theme_manager_popup,
+#native_theme_manager_popup *,
+.ntm-settings-entry,
+.ntm-settings-entry *,
+.ntm-extension-menu-entry,
+.ntm-extension-menu-entry * {
+    filter: none;
+}
+
+#native_theme_manager_popup {
+    pointer-events: auto !important;
+}
+
+#native_theme_manager_popup .menu_button {
+    pointer-events: auto;
+}
+
+/* ---------------------------------------------------------
    移动端
-   ========================= */
+   --------------------------------------------------------- */
 
 @media screen and (max-width: 700px) {
-    #beautify_manager_popup {
+    #native_theme_manager_popup {
         min-width: 0;
     }
 
-    .bm-header {
-        align-items: flex-start;
+    .ntm-manager-header {
         flex-direction: column;
     }
 
-    .bm-toolbar {
+    .ntm-current-theme-card {
+        flex: none;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .ntm-manager-toolbar {
         align-items: stretch;
         flex-direction: column;
     }
 
-    .bm-toolbar #bm_preset_select {
+    .ntm-search-wrapper {
         flex: none;
         width: 100%;
     }
 
-    .bm-toolbar .menu_button,
-    .bm-import-export-row .menu_button {
+    .ntm-theme-counter {
+        text-align: center;
+    }
+
+    .ntm-toolbar-spacer {
+        display: none;
+    }
+
+    .ntm-native-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .ntm-native-actions .ntm-action {
         justify-content: center;
+        min-width: 0;
     }
 
-    .bm-footer {
-        align-items: stretch;
-        flex-direction: column;
+    .ntm-theme-grid {
+        grid-template-columns: 1fr;
     }
 
-    .bm-footer-actions {
-        justify-content: flex-end;
+    .ntm-theme-preview {
+        height: 128px;
     }
+}
 
-    #bm_css_editor {
-        min-height: 300px;
+@media screen and (max-width: 420px) {
+    .ntm-native-actions {
+        grid-template-columns: 1fr;
     }
 }
