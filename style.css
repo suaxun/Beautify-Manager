@@ -1,10 +1,10 @@
 /* =========================================================
-   主题展示与色系管理器
+   主题系列管理器：紧凑横向列表
    ========================================================= */
 
-/* ---------------------------------------------------------
+/* -----------------------------
    注入入口
-   --------------------------------------------------------- */
+   ----------------------------- */
 
 .ntm-settings-entry {
     display: flex;
@@ -32,16 +32,16 @@
     color: var(--SmartThemeQuoteColor);
 }
 
-/* ---------------------------------------------------------
-   主界面
-   --------------------------------------------------------- */
+/* -----------------------------
+   管理器
+   ----------------------------- */
 
 #native_theme_manager_popup {
     display: flex;
     flex-direction: column;
     width: 100%;
-    min-width: min(1020px, 88vw);
-    gap: 14px;
+    min-width: min(850px, 86vw);
+    gap: 12px;
     color: var(--SmartThemeBodyColor);
     opacity: 1 !important;
     filter: none !important;
@@ -51,14 +51,14 @@
     display: flex;
     align-items: stretch;
     justify-content: space-between;
-    gap: 16px;
+    gap: 14px;
 }
 
 .ntm-title-area {
     display: flex;
     align-items: center;
     min-width: 0;
-    gap: 12px;
+    gap: 10px;
 }
 
 .ntm-title-area h3 {
@@ -66,140 +66,111 @@
 }
 
 .ntm-subtitle {
-    margin-top: 4px;
-    opacity: 0.68;
-    font-size: 0.88em;
+    margin-top: 3px;
+    opacity: 0.65;
+    font-size: 0.85em;
 }
 
 .ntm-main-icon {
     display: flex;
     align-items: center;
     justify-content: center;
-    flex: 0 0 50px;
-    width: 50px;
-    height: 50px;
+    flex: 0 0 42px;
+    width: 42px;
+    height: 42px;
     border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 15px;
+    border-radius: 10px;
     color: var(--SmartThemeQuoteColor);
     background:
-        linear-gradient(
-            145deg,
-            color-mix(
-                in srgb,
-                var(--SmartThemeQuoteColor) 25%,
-                transparent
-            ),
-            color-mix(
-                in srgb,
-                var(--SmartThemeBlurTintColor) 88%,
-                transparent
-            )
+        color-mix(
+            in srgb,
+            var(--SmartThemeQuoteColor) 12%,
+            var(--SmartThemeBlurTintColor)
         );
-    box-shadow: 0 8px 25px rgb(0 0 0 / 18%);
-    font-size: 1.45em;
 }
 
 .ntm-current-theme-box {
     display: flex;
-    flex: 0 1 270px;
+    flex: 0 1 240px;
     flex-direction: column;
     justify-content: center;
-    min-width: 210px;
-    padding: 10px 14px;
+    min-width: 190px;
+    padding: 8px 12px;
     overflow: hidden;
     border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 13px;
-    background: color-mix(
-        in srgb,
-        var(--SmartThemeBlurTintColor) 84%,
-        transparent
-    );
+    border-radius: 10px;
+    background:
+        color-mix(
+            in srgb,
+            var(--SmartThemeBlurTintColor) 86%,
+            transparent
+        );
 }
 
 .ntm-current-theme-box small {
-    opacity: 0.62;
+    opacity: 0.58;
+}
+
+.ntm-current-theme-box strong,
+.ntm-current-theme-box span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .ntm-current-theme-box strong {
-    margin-top: 2px;
-    overflow: hidden;
     color: var(--SmartThemeQuoteColor);
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .ntm-current-theme-box span {
-    margin-top: 2px;
-    overflow: hidden;
-    opacity: 0.52;
-    font-family:
-        "Noto Sans Mono",
-        Consolas,
-        monospace;
+    opacity: 0.5;
     font-size: 0.72em;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
-/* ---------------------------------------------------------
+/* -----------------------------
    工具栏
-   --------------------------------------------------------- */
+   ----------------------------- */
 
 .ntm-toolbar {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 8px;
-    padding: 10px;
+    gap: 7px;
+    padding: 8px;
     border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 12px;
-    background: color-mix(
-        in srgb,
-        var(--SmartThemeBlurTintColor) 78%,
-        transparent
-    );
+    border-radius: 10px;
 }
 
 .ntm-search-box {
     position: relative;
     display: flex;
     align-items: center;
-    flex: 1 1 300px;
+    flex: 1 1 280px;
 }
 
 .ntm-search-box > i {
     position: absolute;
-    left: 11px;
+    left: 10px;
     z-index: 2;
-    opacity: 0.52;
+    opacity: 0.5;
     pointer-events: none;
 }
 
 .ntm-search-box input {
     width: 100%;
     margin: 0;
-    padding-left: 34px;
+    padding-left: 32px;
 }
 
 .ntm-hint {
     display: flex;
     align-items: flex-start;
-    gap: 8px;
-    padding: 9px 12px;
-    border: 1px solid
-        color-mix(
-            in srgb,
-            var(--SmartThemeQuoteColor) 30%,
-            var(--SmartThemeBorderColor)
-        );
-    border-radius: 10px;
-    background:
-        color-mix(
-            in srgb,
-            var(--SmartThemeQuoteColor) 7%,
-            transparent
-        );
-    font-size: 0.87em;
+    gap: 7px;
+    padding: 8px 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 9px;
+    opacity: 0.76;
+    font-size: 0.84em;
 }
 
 .ntm-hint i {
@@ -207,250 +178,332 @@
     color: var(--SmartThemeQuoteColor);
 }
 
-/* ---------------------------------------------------------
-   卡片网格
-   --------------------------------------------------------- */
+/* -----------------------------
+   一排一个主题系列
+   ----------------------------- */
 
 .ntm-groups-grid {
     display: grid;
-    grid-template-columns:
-        repeat(
-            auto-fill,
-            minmax(min(250px, 100%), 1fr)
-        );
-    align-items: start;
-    gap: 16px;
+    grid-template-columns: 1fr;
+    gap: 9px;
     width: 100%;
 }
 
 .ntm-group-card {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
+    --ntm-active-color: var(--SmartThemeQuoteColor);
+
+    display: grid;
+    grid-template-columns: 82px minmax(0, 1fr) auto;
+    align-items: stretch;
+    min-height: 126px;
     overflow: hidden;
     border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 18px;
+    border-radius: 12px;
     background:
         color-mix(
             in srgb,
-            var(--SmartThemeBlurTintColor) 86%,
-            rgb(20 20 24 / 75%)
+            var(--SmartThemeBlurTintColor) 88%,
+            transparent
         );
-    box-shadow: 0 7px 22px rgb(0 0 0 / 16%);
+    box-shadow: 0 3px 12px rgb(0 0 0 / 10%);
     transition:
-        transform 150ms ease,
-        border-color 150ms ease,
-        box-shadow 150ms ease;
+        border-color 140ms ease,
+        box-shadow 140ms ease,
+        transform 140ms ease;
 }
 
 .ntm-group-card:hover {
     border-color:
         color-mix(
             in srgb,
-            var(--SmartThemeQuoteColor) 65%,
+            var(--ntm-active-color) 70%,
             var(--SmartThemeBorderColor)
         );
-    box-shadow: 0 12px 30px rgb(0 0 0 / 25%);
-    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgb(0 0 0 / 18%);
+    transform: translateY(-1px);
 }
 
 .ntm-group-card-current {
-    border-color: var(--SmartThemeQuoteColor);
+    border-color: var(--ntm-active-color);
     box-shadow:
-        0 12px 30px rgb(0 0 0 / 22%),
-        0 0 0 2px
-        color-mix(
-            in srgb,
-            var(--SmartThemeQuoteColor) 24%,
-            transparent
-        );
+        0 4px 16px rgb(0 0 0 / 16%),
+        inset 3px 0 0 var(--ntm-active-color);
 }
 
-/* ---------------------------------------------------------
-   竖屏手机预览
-   --------------------------------------------------------- */
+/* -----------------------------
+   小型原图预览
+   ----------------------------- */
 
-.ntm-preview-shell {
-    position: relative;
+.ntm-compact-preview {
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 340px;
-    padding: 20px;
-    overflow: hidden;
-    border-bottom: 1px solid var(--SmartThemeBorderColor);
-    background:
-        radial-gradient(
-            circle at 18% 15%,
-            color-mix(
-                in srgb,
-                var(--SmartThemeQuoteColor) 25%,
-                transparent
-            ),
-            transparent 46%
-        ),
-        linear-gradient(
-            145deg,
-            rgb(255 255 255 / 3%),
-            rgb(0 0 0 / 12%)
-        );
-}
-
-.ntm-phone-preview {
-    position: relative;
-    width: min(168px, 72%);
-    aspect-ratio: 9 / 19.5;
-    padding: 6px;
-    overflow: hidden;
-    border: 2px solid rgb(255 255 255 / 22%);
-    border-radius: 27px;
-    background: #08080a;
-    box-shadow:
-        0 18px 34px rgb(0 0 0 / 42%),
-        inset 0 0 0 1px rgb(255 255 255 / 8%);
-}
-
-.ntm-phone-speaker {
-    position: absolute;
-    top: 10px;
-    left: 50%;
-    z-index: 4;
-    width: 36%;
-    height: 12px;
-    border-radius: 999px;
-    background: #070709;
-    transform: translateX(-50%);
+    min-width: 0;
+    padding: 7px;
+    border-right: 1px solid var(--SmartThemeBorderColor);
+    background: rgb(0 0 0 / 8%);
 }
 
 .ntm-preview-content {
     position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 68px;
+    height: 112px;
+    overflow: hidden;
+    border-radius: 5px;
+    background:
+        linear-gradient(
+            155deg,
+            color-mix(
+                in srgb,
+                var(--ntm-active-color) 34%,
+                #26262b
+            ),
+            color-mix(
+                in srgb,
+                var(--ntm-active-color) 8%,
+                #111115
+            )
+        );
+}
+
+/*
+ * 图片保持自身完整内容：
+ * - 不裁切
+ * - 不拉伸
+ * - 居中显示
+ */
+.ntm-preview-image {
+    display: block;
     width: 100%;
     height: 100%;
-    overflow: hidden;
-    border-radius: 21px;
+    object-fit: contain;
+    object-position: center;
+    background: transparent;
+}
+
+/* -----------------------------
+   没有预览图时的主题色占位美化
+   ----------------------------- */
+
+.ntm-preview-placeholder {
+    display: flex;
+    align-items: stretch;
+    justify-content: stretch;
+    width: 100%;
+    height: 100%;
+    padding: 6px;
     background:
+        radial-gradient(
+            circle at 70% 12%,
+            color-mix(
+                in srgb,
+                var(--ntm-active-color) 60%,
+                transparent
+            ),
+            transparent 38%
+        ),
         linear-gradient(
             160deg,
             color-mix(
                 in srgb,
-                var(--SmartThemeQuoteColor) 18%,
-                #222
+                var(--ntm-active-color) 24%,
+                #24242a
             ),
-            #111
+            #101014
         );
 }
 
-.ntm-preview-image {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    object-position: top center;
-}
-
-.ntm-preview-placeholder {
+.ntm-placeholder-decoration {
     display: flex;
-    align-items: center;
-    justify-content: center;
     flex-direction: column;
     width: 100%;
-    height: 100%;
-    gap: 8px;
-    color: rgb(255 255 255 / 55%);
-    text-align: center;
+    min-width: 0;
+    gap: 7px;
 }
 
-.ntm-preview-placeholder i {
-    font-size: 2em;
+.ntm-placeholder-topbar {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    height: 8px;
 }
 
-.ntm-preview-placeholder span {
-    padding: 0 12px;
-    font-size: 0.78em;
+.ntm-placeholder-topbar span {
+    display: block;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background:
+        color-mix(
+            in srgb,
+            var(--ntm-active-color) 70%,
+            white
+        );
 }
+
+.ntm-placeholder-chat {
+    display: flex;
+    flex: 1;
+    gap: 5px;
+    padding: 6px 4px;
+    border: 1px solid rgb(255 255 255 / 9%);
+    border-radius: 5px;
+    background: rgb(0 0 0 / 22%);
+}
+
+.ntm-placeholder-avatar {
+    flex: 0 0 13px;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: var(--ntm-active-color);
+}
+
+.ntm-placeholder-lines {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 4px;
+    padding-top: 2px;
+}
+
+.ntm-placeholder-lines span {
+    display: block;
+    width: 100%;
+    height: 3px;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 28%);
+}
+
+.ntm-placeholder-lines span:nth-child(2) {
+    width: 78%;
+}
+
+.ntm-placeholder-lines span:nth-child(3) {
+    width: 55%;
+    background:
+        color-mix(
+            in srgb,
+            var(--ntm-active-color) 58%,
+            transparent
+        );
+}
+
+.ntm-placeholder-input {
+    height: 12px;
+    border: 1px solid rgb(255 255 255 / 10%);
+    border-radius: 4px;
+    background: rgb(0 0 0 / 25%);
+}
+
+/* -----------------------------
+   系列信息
+   ----------------------------- */
+
+.ntm-group-info {
+    display: flex;
+    justify-content: center;
+    flex-direction: column;
+    min-width: 0;
+    gap: 7px;
+    padding: 10px 12px;
+}
+
+.ntm-group-title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    min-width: 0;
+    gap: 10px;
+}
+
+.ntm-group-title-block {
+    min-width: 0;
+}
+
+.ntm-group-info h4 {
+    margin: 0;
+    overflow: hidden;
+    font-size: 1em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ntm-preview-badge {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 4px;
+    padding: 2px 7px;
+    border: 1px solid
+        color-mix(
+            in srgb,
+            var(--ntm-active-color) 55%,
+            var(--SmartThemeBorderColor)
+        );
+    border-radius: 999px;
+    color:
+        color-mix(
+            in srgb,
+            var(--ntm-active-color) 80%,
+            var(--SmartThemeBodyColor)
+        );
+    background:
+        color-mix(
+            in srgb,
+            var(--ntm-active-color) 10%,
+            transparent
+        );
+    font-size: 0.72em;
+}
+
+.ntm-group-theme-name {
+    margin-top: 4px;
+    overflow: hidden;
+    opacity: 0.48;
+    font-family:
+        "Noto Sans Mono",
+        Consolas,
+        monospace;
+    font-size: 0.69em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* -----------------------------
+   编辑、删除按钮
+   ----------------------------- */
 
 .ntm-card-controls {
-    position: absolute;
-    top: 10px;
-    right: 10px;
     display: flex;
-    z-index: 6;
-    gap: 6px;
+    flex: 0 0 auto;
+    gap: 5px;
 }
 
 .ntm-card-icon-button {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 31px;
-    height: 31px;
+    width: 29px;
+    height: 29px;
     margin: 0;
-    border-radius: 9px;
-    background: rgb(0 0 0 / 42%);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    border-radius: 7px;
 }
 
 .ntm-card-delete {
-    color: #ff8c8c;
+    color: #e98282;
 }
 
-.ntm-preview-badge {
-    position: absolute;
-    right: 12px;
-    bottom: 11px;
-    left: 12px;
-    z-index: 5;
-    padding: 6px 10px;
-    overflow: hidden;
-    border: 1px solid rgb(255 255 255 / 13%);
-    border-radius: 9px;
-    color: white;
-    background: rgb(0 0 0 / 42%);
-    text-align: center;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    backdrop-filter: blur(9px);
-    -webkit-backdrop-filter: blur(9px);
-    font-size: 0.78em;
-}
-
-/* ---------------------------------------------------------
-   卡片信息与色点
-   --------------------------------------------------------- */
-
-.ntm-group-info {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 13px;
-}
-
-.ntm-group-info h4 {
-    margin: 0;
-    overflow: hidden;
-    font-size: 1.04em;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.ntm-group-theme-name {
-    overflow: hidden;
-    opacity: 0.5;
-    font-family:
-        "Noto Sans Mono",
-        Consolas,
-        monospace;
-    font-size: 0.7em;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
+/* -----------------------------
+   色系圆点
+   ----------------------------- */
 
 .ntm-color-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    min-height: 31px;
+    min-height: 27px;
     gap: 8px;
 }
 
@@ -462,14 +515,16 @@
 }
 
 .ntm-color-dot {
+    --ntm-dot-color: #888;
+
     position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 25px;
-    height: 25px;
+    width: 22px;
+    height: 22px;
     padding: 0;
-    border: 1px solid rgb(255 255 255 / 20%);
+    border: 1px solid rgb(255 255 255 / 18%);
     border-radius: 50%;
     background: transparent;
     cursor: pointer;
@@ -480,37 +535,31 @@
 
 .ntm-color-dot > span {
     display: block;
-    width: 17px;
-    height: 17px;
+    width: 15px;
+    height: 15px;
     border-radius: 50%;
     background: var(--ntm-dot-color);
-    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 20%);
 }
 
 .ntm-color-dot:hover {
-    transform: scale(1.12);
+    transform: scale(1.13);
 }
 
 .ntm-color-dot-selected {
     box-shadow:
-        0 0 0 2px var(--SmartThemeBodyColor),
-        0 0 0 4px
-        color-mix(
-            in srgb,
-            var(--ntm-dot-color) 70%,
-            transparent
-        );
+        0 0 0 2px var(--SmartThemeBlurTintColor),
+        0 0 0 4px var(--ntm-dot-color);
 }
 
 .ntm-color-dot-current::after {
     position: absolute;
     right: -2px;
     bottom: -2px;
-    width: 8px;
-    height: 8px;
+    width: 7px;
+    height: 7px;
     border: 1px solid var(--SmartThemeBlurTintColor);
     border-radius: 50%;
-    background: #63df89;
+    background: #65dd88;
     content: "";
 }
 
@@ -518,43 +567,54 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    flex: 0 0 26px;
-    width: 26px;
-    height: 26px;
+    width: 22px;
+    height: 22px;
     padding: 0;
     border: 1px dashed var(--SmartThemeBorderColor);
     border-radius: 50%;
     color: var(--SmartThemeBodyColor);
     background: transparent;
     cursor: pointer;
-    opacity: 0.64;
+    opacity: 0.6;
 }
 
 .ntm-add-color-button:hover {
-    border-color: var(--SmartThemeQuoteColor);
-    color: var(--SmartThemeQuoteColor);
+    border-color: var(--ntm-active-color);
+    color: var(--ntm-active-color);
     opacity: 1;
+}
+
+/* -----------------------------
+   右侧应用按钮
+   ----------------------------- */
+
+.ntm-row-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+    border-left: 1px solid var(--SmartThemeBorderColor);
 }
 
 .ntm-apply-button {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 100%;
+    min-width: 74px;
     min-height: 34px;
-    gap: 7px;
+    gap: 6px;
     border: 1px solid
         color-mix(
             in srgb,
-            var(--SmartThemeQuoteColor) 45%,
+            var(--ntm-active-color) 55%,
             var(--SmartThemeBorderColor)
         );
-    border-radius: 10px;
+    border-radius: 8px;
     color: var(--SmartThemeBodyColor);
     background:
         color-mix(
             in srgb,
-            var(--SmartThemeQuoteColor) 10%,
+            var(--ntm-active-color) 12%,
             transparent
         );
     cursor: pointer;
@@ -564,47 +624,21 @@
     background:
         color-mix(
             in srgb,
-            var(--SmartThemeQuoteColor) 20%,
+            var(--ntm-active-color) 23%,
             transparent
         );
 }
 
-/* ---------------------------------------------------------
-   空状态
-   --------------------------------------------------------- */
-
-.ntm-empty {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-direction: column;
-    min-height: 260px;
-    gap: 7px;
-    border: 1px dashed var(--SmartThemeBorderColor);
-    border-radius: 16px;
-    text-align: center;
-}
-
-.ntm-empty > i {
-    margin-bottom: 8px;
-    color: var(--SmartThemeQuoteColor);
-    font-size: 2.3em;
-}
-
-.ntm-empty span {
-    opacity: 0.62;
-}
-
-/* ---------------------------------------------------------
-   系列编辑器
-   --------------------------------------------------------- */
+/* -----------------------------
+   编辑器
+   ----------------------------- */
 
 .ntm-group-editor {
     display: flex;
     flex-direction: column;
     width: 100%;
-    min-width: min(860px, 84vw);
-    gap: 14px;
+    min-width: min(760px, 82vw);
+    gap: 13px;
 }
 
 .ntm-editor-heading h3 {
@@ -612,17 +646,17 @@
 }
 
 .ntm-editor-heading small {
-    opacity: 0.62;
+    opacity: 0.6;
 }
 
 .ntm-field {
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 4px;
 }
 
 .ntm-field > span {
-    font-size: 0.87em;
+    font-size: 0.85em;
     font-weight: 600;
 }
 
@@ -636,8 +670,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding-top: 12px;
+    gap: 10px;
+    padding-top: 10px;
     border-top: 1px solid var(--SmartThemeBorderColor);
 }
 
@@ -647,55 +681,64 @@
 }
 
 .ntm-editor-section-title small {
-    margin-top: 2px;
-    opacity: 0.58;
+    opacity: 0.56;
 }
 
 #ntm_variant_editor_list {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
 }
 
 .ntm-variant-editor {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 12px;
+    gap: 10px;
+    padding: 11px;
     border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 14px;
-    background:
-        color-mix(
-            in srgb,
-            var(--SmartThemeBlurTintColor) 77%,
-            transparent
-        );
+    border-radius: 11px;
 }
 
 .ntm-variant-editor-top {
     display: flex;
     align-items: flex-end;
-    gap: 10px;
+    gap: 9px;
+}
+
+.ntm-color-editor {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 5px;
 }
 
 .ntm-color-input-wrap {
     display: flex;
     align-items: center;
     justify-content: center;
-    flex: 0 0 46px;
-    width: 46px;
-    height: 46px;
+    width: 40px;
+    height: 40px;
     overflow: hidden;
     border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 12px;
+    border-radius: 9px;
 }
 
 .ntm-color-input-wrap input[type="color"] {
-    width: 60px;
-    height: 60px;
+    width: 54px;
+    height: 54px;
     padding: 0;
     border: 0;
-    cursor: pointer;
+}
+
+.ntm-color-input-wrap input[type="color"]:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.ntm-auto-color-label {
+    white-space: nowrap;
+    font-size: 0.72em;
 }
 
 .ntm-variant-name-field {
@@ -706,50 +749,58 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 42px;
-    height: 42px;
+    width: 39px;
+    height: 39px;
     margin: 0;
-    color: #ff8585;
+    color: #e98282;
 }
 
 .ntm-variant-editor-body {
     display: grid;
-    grid-template-columns: minmax(150px, 210px) 1fr;
-    gap: 18px;
+    grid-template-columns: 135px minmax(0, 1fr);
+    gap: 15px;
 }
 
 .ntm-editor-preview-column {
     display: flex;
     align-items: center;
     flex-direction: column;
-    gap: 8px;
+    gap: 7px;
 }
 
-.ntm-mini-phone {
-    width: 120px;
-    aspect-ratio: 9 / 19.5;
-    padding: 4px;
-    overflow: hidden;
-    border: 2px solid rgb(255 255 255 / 20%);
-    border-radius: 21px;
-    background: #09090b;
-    box-shadow: 0 10px 22px rgb(0 0 0 / 32%);
-}
+/*
+ * 编辑器中的纯图片预览，不带外壳。
+ */
+.ntm-mini-preview {
+    --ntm-editor-color: #8b7cff;
 
-.ntm-mini-phone-screen {
     position: relative;
-    width: 100%;
-    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 78px;
+    height: 130px;
     overflow: hidden;
-    border-radius: 16px;
-    background: #18181c;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 5px;
+    background:
+        linear-gradient(
+            155deg,
+            color-mix(
+                in srgb,
+                var(--ntm-editor-color) 34%,
+                #25252a
+            ),
+            #111115
+        );
 }
 
 .ntm-mini-preview-image {
+    display: block;
     width: 100%;
     height: 100%;
-    object-fit: cover;
-    object-position: top center;
+    object-fit: contain;
+    object-position: center;
 }
 
 .ntm-mini-placeholder {
@@ -758,8 +809,27 @@
     justify-content: center;
     width: 100%;
     height: 100%;
-    opacity: 0.42;
-    font-size: 1.8em;
+    color:
+        color-mix(
+            in srgb,
+            var(--ntm-editor-color) 72%,
+            white
+        );
+    background:
+        radial-gradient(
+            circle at 70% 15%,
+            color-mix(
+                in srgb,
+                var(--ntm-editor-color) 52%,
+                transparent
+            ),
+            transparent 42%
+        );
+}
+
+.ntm-mini-placeholder-art {
+    opacity: 0.74;
+    font-size: 1.5em;
 }
 
 .ntm-upload-label {
@@ -770,23 +840,24 @@
 .ntm-file-status {
     width: 100%;
     overflow: hidden;
-    opacity: 0.58;
+    opacity: 0.55;
     text-align: center;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 0.74em;
 }
 
 .ntm-editor-link-column {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 9px;
 }
 
 .ntm-link-divider {
     display: flex;
     align-items: center;
-    gap: 8px;
-    opacity: 0.55;
+    gap: 7px;
+    opacity: 0.5;
 }
 
 .ntm-link-divider::before,
@@ -798,37 +869,35 @@
 }
 
 .ntm-json-file-info {
-    padding: 8px 10px;
-    overflow: hidden;
+    padding: 7px 9px;
     border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 8px;
-    font-size: 0.82em;
+    border-radius: 7px;
+    font-size: 0.8em;
 }
 
-.ntm-json-file-info span {
-    overflow-wrap: anywhere;
+/* -----------------------------
+   空状态
+   ----------------------------- */
+
+.ntm-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    min-height: 210px;
+    gap: 6px;
+    border: 1px dashed var(--SmartThemeBorderColor);
+    border-radius: 12px;
 }
 
-/* ---------------------------------------------------------
-   防止灰色
-   --------------------------------------------------------- */
-
-#native_theme_manager_popup,
-#native_theme_manager_popup *,
-.ntm-group-editor,
-.ntm-group-editor * {
-    filter: none;
+.ntm-empty > i {
+    color: var(--SmartThemeQuoteColor);
+    font-size: 2em;
 }
 
-#native_theme_manager_popup,
-.ntm-group-editor {
-    opacity: 1 !important;
-    pointer-events: auto !important;
-}
-
-/* ---------------------------------------------------------
+/* -----------------------------
    移动端
-   --------------------------------------------------------- */
+   ----------------------------- */
 
 @media screen and (max-width: 700px) {
     #native_theme_manager_popup,
@@ -856,26 +925,38 @@
         width: 100%;
     }
 
-    .ntm-groups-grid {
-        grid-template-columns:
-            repeat(
-                2,
-                minmax(0, 1fr)
-            );
-        gap: 10px;
+    .ntm-group-card {
+        grid-template-columns: 68px minmax(0, 1fr);
+        min-height: 112px;
     }
 
-    .ntm-preview-shell {
-        min-height: 260px;
-        padding: 12px;
+    .ntm-compact-preview {
+        padding: 5px;
     }
 
-    .ntm-phone-preview {
-        width: min(130px, 78%);
+    .ntm-preview-content {
+        width: 56px;
+        height: 96px;
+    }
+
+    .ntm-row-actions {
+        grid-column: 1 / -1;
+        padding: 7px;
+        border-top: 1px solid var(--SmartThemeBorderColor);
+        border-left: 0;
+    }
+
+    .ntm-apply-button {
+        width: 100%;
+        min-height: 30px;
     }
 
     .ntm-group-info {
-        padding: 10px;
+        padding: 8px 9px;
+    }
+
+    .ntm-group-title-row {
+        gap: 6px;
     }
 
     .ntm-variant-editor-body {
@@ -886,22 +967,29 @@
         width: 100%;
     }
 
-    .ntm-upload-label {
-        width: 100%;
+    .ntm-mini-preview {
+        width: 72px;
+        height: 120px;
     }
 }
 
-@media screen and (max-width: 460px) {
-    .ntm-groups-grid {
-        grid-template-columns: 1fr;
+@media screen and (max-width: 430px) {
+    .ntm-group-card {
+        grid-template-columns: 62px minmax(0, 1fr);
     }
 
-    .ntm-preview-shell {
-        min-height: 350px;
+    .ntm-preview-content {
+        width: 51px;
+        height: 88px;
     }
 
-    .ntm-phone-preview {
-        width: min(170px, 70%);
+    .ntm-card-controls {
+        flex-direction: column;
+    }
+
+    .ntm-card-icon-button {
+        width: 27px;
+        height: 27px;
     }
 
     .ntm-variant-editor-top {
