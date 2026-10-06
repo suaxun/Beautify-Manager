@@ -1,0 +1,11 @@
+{
+    "display_name": "美化管理器",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "YourName",
+    "version": "1.0.0",
+    "homePage": "https://github.com/YourName/SillyTavern-Beautify-Manager"
+}
