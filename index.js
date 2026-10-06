@@ -406,32 +406,6 @@ function extractThemeAccentColor(themeData, fallbackName = '') {
     );
 }
 
-/**
- * 尝试将浏览器支持的任意 CSS 颜色转换为十六进制。
- *
- * @param {string} color
- * @returns {string}
- */
-function normalizeColorToHex(color) {
-    const direct = rgbColorToHex(color);
-
-    if (direct) {
-        return direct;
-    }
-
-    const probe = document.createElement('span');
-
-    probe.style.position = 'fixed';
-    probe.style.pointerEvents = 'none';
-    probe.style.opacity = '0';
-    probe.style.color = String(color || '');
-    document.body.appendChild(probe);
-
-    const computedColor = getComputedStyle(probe).color;
-    probe.remove();
-
-    return rgbColorToHex(computedColor);
-}
 
 /**
  * 读取当前 SillyTavern 主题的实际主题色。
