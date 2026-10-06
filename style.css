@@ -1001,3 +1001,64 @@
         flex: 1 1 calc(100% - 60px);
     }
 }
+.ntm-color-dot {
+    appearance: none;
+    width: 24px;
+    height: 24px;
+    padding: 3px;
+    border: 2px solid transparent;
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+    box-sizing: border-box;
+    transition:
+        transform 0.15s ease,
+        border-color 0.15s ease,
+        box-shadow 0.15s ease;
+}
+
+/*
+ * 无论有没有 selected，
+ * 圆点内部颜色始终来自这个变体自己的 --ntm-dot-color。
+ */
+.ntm-color-dot > span {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    background-color: var(--ntm-dot-color, #8b7cff);
+}
+
+/*
+ * selected 只增加选中边框，不修改内部背景色。
+ */
+.ntm-color-dot-selected {
+    border-color: var(--ntm-dot-color, #8b7cff);
+    box-shadow:
+        0 0 0 2px color-mix(
+            in srgb,
+            var(--ntm-dot-color, #8b7cff) 28%,
+            transparent
+        );
+    transform: scale(1.1);
+}
+
+/*
+ * 即使被选中，内部仍然是这个主题自己的颜色。
+ */
+.ntm-color-dot-selected > span {
+    background-color: var(--ntm-dot-color, #8b7cff);
+}
+
+/*
+ * 当前真正应用到 SillyTavern 的主题，可以增加白色标记。
+ * 仍然不覆盖圆点颜色。
+ */
+.ntm-color-dot-current {
+    outline: 2px solid rgba(255, 255, 255, 0.85);
+    outline-offset: 2px;
+}
+
+.ntm-color-dot:hover {
+    transform: scale(1.12);
+}
