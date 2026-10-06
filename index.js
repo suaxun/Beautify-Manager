@@ -166,6 +166,245 @@ function createStableColor(text) {
      */
     return `hsl(${hue} 62% 58%)`;
 }
+/**
+ * 将 RGB/RGBA 颜色转换为 HEX。
+ *
+ * 支持：
+ * rgb(123, 45, 67)
+ * rgba(123, 45, 67, 0.8)
+ * rgb(123 45 67)
+ *
+ * @param {string} color
+ * @returns {string}
+ */
+function rgbColorToHex(color) {
+    const value = String(color || '').trim();
+
+    if (/^#[0-9a-f]{6}$/i.test(value)) {
+        return value.toLowerCase();
+    }
+
+    if (/^#[0-9a-f]{3}$/i.test(value)) {
+        return (
+            '#' +
+            value[1] + value[1] +
+            value[2] + value[2] +
+            value[3] + value[3]
+        ).toLowerCase();
+    }
+
+    const match = value.match(
+        /rgba?\(\s*(\d+(?:\.\d+)?)\s*[, ]\s*(\d+(?:\.\d+)?)\s*[, ]\s*(\d+(?:\.\d+)?)/i,
+    );
+
+    if (!match) {
+        return '';
+    }
+
+    const channels = match.slice(1, 4).map(channel => {
+        const number = Math.max(
+            0,
+            Math.min(255, Math.round(Number(channel))),
+        );
+
+        return number.toString(16).padStart(2, '0');
+    });
+
+    return `#${channels.join('')}`;
+}
+
+/**
+ * 将浏览器支持的 CSS 颜色转换成 HEX。
+ *
+ * @param {unknown} value
+ * @returns {string}
+ */
+function normalizeColorToHex(value) {
+    const color = String(value || '').trim();
+
+    if (!color) {
+        return '';
+    }
+
+    const directColor = rgbColorToHex(color);
+
+    if (directColor) {
+        return directColor;
+    }
+
+    const probe = document.createElement('span');
+
+    probe.style.position = 'fixed';
+    probe.style.visibility = 'hidden';
+    probe.style.pointerEvents = 'none';
+    probe.style.color = '';
+    probe.style.color = color;
+
+    /*
+     * 浏览器不接受这个颜色值。
+     */
+    if (!probe.style.color) {
+        return '';
+    }
+
+    document.body.appendChild(probe);
+
+    const computedColor = getComputedStyle(probe).color;
+
+    probe.remove();
+
+    return rgbColorToHex(computedColor);
+}
+
+/**
+ * 判断颜色是否适合当主题强调色。
+ *
+ * 排除：
+ * - 空值
+ * - transparent
+ * - 完全透明的 rgba
+ *
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+function isUsefulThemeColor(value) {
+    const color = String(value || '').trim().toLowerCase();
+
+    if (!color || color === 'transparent') {
+        return false;
+    }
+
+    if (
+        /^rgba\([^)]*,\s*0(?:\.0+)?\s*\)$/i.test(color) ||
+        /^rgba\([^)]*\/\s*0(?:\.0+)?\s*\)$/i.test(color)
+    ) {
+        return false;
+    }
+
+    return Boolean(normalizeColorToHex(color));
+}
+
+/**
+ * 从 SillyTavern Theme JSON 中提取该主题自己的强调色。
+ *
+ * 不同版本和不同主题作者使用的字段可能不完全相同，
+ * 所以兼容 snake_case、camelCase、CSS 变量等多种写法。
+ *
+ * 优先级：
+ * 1. quote_color / SmartThemeQuoteColor
+ * 2. underline_color
+ * 3. italics_color
+ * 4. border_color
+ * 5. main_text_color
+ *
+ * @param {object} themeData
+ * @param {string} fallbackName
+ * @returns {string}
+ */
+function extractThemeAccentColor(themeData, fallbackName = '') {
+    if (!themeData || typeof themeData !== 'object') {
+        return createStableColor(fallbackName);
+    }
+
+    const candidates = [
+        themeData.quote_color,
+        themeData.quoteColor,
+        themeData.SmartThemeQuoteColor,
+        themeData['--SmartThemeQuoteColor'],
+
+        themeData.underline_color,
+        themeData.underlineColor,
+        themeData.SmartThemeUnderlineColor,
+        themeData['--SmartThemeUnderlineColor'],
+
+        themeData.italics_color,
+        themeData.italicsColor,
+        themeData.SmartThemeEmColor,
+        themeData['--SmartThemeEmColor'],
+
+        themeData.border_color,
+        themeData.borderColor,
+        themeData.SmartThemeBorderColor,
+        themeData['--SmartThemeBorderColor'],
+
+        themeData.main_text_color,
+        themeData.mainTextColor,
+        themeData.SmartThemeBodyColor,
+        themeData['--SmartThemeBodyColor'],
+
+        themeData.accent_color,
+        themeData.accentColor,
+        themeData.primary_color,
+        themeData.primaryColor,
+        themeData.theme_color,
+        themeData.themeColor,
+    ];
+
+    /*
+     * 有些主题把颜色放在 colors、variables 或 theme 对象中。
+     */
+    const nestedObjects = [
+        themeData.colors,
+        themeData.variables,
+        themeData.cssVariables,
+        themeData.theme,
+        themeData.settings,
+    ];
+
+    for (const nested of nestedObjects) {
+        if (!nested || typeof nested !== 'object') {
+            continue;
+        }
+
+        candidates.push(
+            nested.quote_color,
+            nested.quoteColor,
+            nested.SmartThemeQuoteColor,
+            nested['--SmartThemeQuoteColor'],
+
+            nested.underline_color,
+            nested.underlineColor,
+            nested.SmartThemeUnderlineColor,
+            nested['--SmartThemeUnderlineColor'],
+
+            nested.accent_color,
+            nested.accentColor,
+            nested.primary_color,
+            nested.primaryColor,
+            nested.theme_color,
+            nested.themeColor,
+
+            nested.border_color,
+            nested.borderColor,
+            nested.main_text_color,
+            nested.mainTextColor,
+        );
+    }
+
+    for (const candidate of candidates) {
+        if (!isUsefulThemeColor(candidate)) {
+            continue;
+        }
+
+        const normalized = normalizeColorToHex(candidate);
+
+        if (normalized) {
+            return normalized;
+        }
+    }
+
+    /*
+     * 实在无法从 JSON 中找到颜色时，
+     * 根据这个美化自己的名称生成独立稳定颜色。
+     *
+     * 不会让所有未知主题都变成同一种颜色。
+     */
+    return createStableColor(
+        fallbackName ||
+        getSuggestedThemeName(themeData) ||
+        JSON.stringify(themeData).slice(0, 200),
+    );
+}
 
 /**
  * 把 rgb()/rgba() 转换为十六进制颜色。
@@ -255,31 +494,6 @@ function getCurrentThemeAccentColor() {
     }
 
     return '';
-}
-
-/**
- * 应用主题后，读取当前主题真实强调色。
- *
- * @param {object} variant
- * @returns {Promise<void>}
- */
-async function captureVariantThemeColor(variant) {
-    if (!variant || variant.colorAuto === false) {
-        return;
-    }
-
-    /*
-     * 留一点时间让 SillyTavern 更新 CSS 变量。
-     */
-    await delay(120);
-
-    const actualColor = getCurrentThemeAccentColor();
-
-    if (actualColor) {
-        variant.color = actualColor;
-        variant.colorAuto = true;
-        saveSettings();
-    }
 }
 
 
@@ -489,39 +703,60 @@ function getSettings() {
                 ),
 variants: group.variants.map(variant => ({
     id: String(variant.id || uuidv4()),
-    name: String(variant.name || '默认'),
+
+    name: String(
+        variant.name ||
+        variant.themeFileSuggestedName ||
+        variant.nativeThemeValue ||
+        '默认',
+    ),
 
     /*
-     * 旧数据没有 colorAuto 字段时，默认使用自动主题色。
+     * 每个美化都有自己独立的颜色。
      */
-    colorAuto: variant.colorAuto !== false,
-
     color: String(
         variant.color ||
         createStableColor(
+            variant.themeFileSuggestedName ||
             variant.nativeThemeValue ||
             variant.name ||
             group.name,
         ),
     ),
 
+    /*
+     * json：来自主题 JSON 自身。
+     * manual：用户手动设置。
+     * generated：暂时根据名称生成。
+     */
+    colorSource: String(
+        variant.colorSource || 'generated',
+    ),
+
     nativeThemeValue: String(
         variant.nativeThemeValue || '',
     ),
-                    previewKey: String(variant.previewKey || ''),
-                    previewFileName: String(
-                        variant.previewFileName || '',
-                    ),
-                    themeFileKey: String(
-                        variant.themeFileKey || '',
-                    ),
-                    themeFileName: String(
-                        variant.themeFileName || '',
-                    ),
-                    themeFileSuggestedName: String(
-                        variant.themeFileSuggestedName || '',
-                    ),
-                })),
+
+    previewKey: String(
+        variant.previewKey || '',
+    ),
+
+    previewFileName: String(
+        variant.previewFileName || '',
+    ),
+
+    themeFileKey: String(
+        variant.themeFileKey || '',
+    ),
+
+    themeFileName: String(
+        variant.themeFileName || '',
+    ),
+
+    themeFileSuggestedName: String(
+        variant.themeFileSuggestedName || '',
+    ),
+}))
             };
         });
 
@@ -672,18 +907,18 @@ function syncNativeThemesToGroups() {
             name: theme.name,
             activeVariantId: variantId,
             variants: [
-                {
-                    id: variantId,
-                    name: '默认',
-                    colorAuto: true,
-                    color: createStableColor(theme.name),
-                    nativeThemeValue: theme.value,
-                    previewKey: '',
-                    previewFileName: '',
-                    themeFileKey: '',
-                    themeFileName: '',
-                    themeFileSuggestedName: theme.name,
-                },
+{
+    id: variantId,
+    name: theme.name,
+    color: createStableColor(theme.name),
+    colorSource: 'generated',
+    nativeThemeValue: theme.value,
+    previewKey: '',
+    previewFileName: '',
+    themeFileKey: '',
+    themeFileName: '',
+    themeFileSuggestedName: theme.name,
+}
             ],
         });
 
@@ -880,10 +1115,7 @@ if (
 ) {
     selectNativeTheme(variant.nativeThemeValue);
 
-    /*
-     * 如果设置为自动颜色，就从实际主题中读取强调色。
-     */
-    await captureVariantThemeColor(variant);
+
 
     await renderGroups();
     updateCurrentThemeDisplay();
@@ -907,7 +1139,6 @@ if (
             saveSettings();
 selectNativeTheme(importedThemeValue);
 
-await captureVariantThemeColor(variant);
 
 toastr.success(
     `已切换到“${variant.name}”。`,
@@ -1318,17 +1549,14 @@ function cloneGroup(group) {
     return structuredClone(group);
 }
 
-/**
- * 创建新变体。
- *
- * @returns {object}
- */
 function createEmptyVariant() {
+    const name = '新色系';
+
     return {
         id: uuidv4(),
-        name: '新色系',
-        colorAuto: true,
-        color: createStableColor('新色系'),
+        name,
+        color: createStableColor(name),
+        colorSource: 'generated',
         nativeThemeValue: '',
         previewKey: '',
         previewFileName: '',
@@ -1426,29 +1654,30 @@ function createGroupEditor(draft) {
                 >
                     <div class="ntm-variant-editor-top">
 <div class="ntm-color-editor">
-    <label class="ntm-color-input-wrap">
+    <label
+        class="ntm-color-input-wrap"
+        title="默认从当前色系自己的 Theme JSON 中读取，也可以手动调整"
+    >
         <input
             class="ntm-variant-color"
             type="color"
             value="${escapeAttribute(
                 normalizeColorToHex(variant.color) || '#8b7cff'
             )}"
-            ${variant.colorAuto !== false ? 'disabled' : ''}
         >
     </label>
 
-    <label
-        class="checkbox_label ntm-auto-color-label"
-        title="应用这个主题后，从 SillyTavern CSS 变量中读取真实主题色"
-    >
-        <input
-            class="ntm-auto-color"
-            type="checkbox"
-            ${variant.colorAuto !== false ? 'checked' : ''}
-        >
-        <small>自动主题色</small>
-    </label>
+    <small class="ntm-color-source">
+        ${
+            variant.colorSource === 'json'
+                ? '来自主题文件'
+                : variant.colorSource === 'manual'
+                    ? '手动颜色'
+                    : '按主题名称生成'
+        }
+    </small>
 </div>
+
                         <label class="ntm-field ntm-variant-name-field">
                             <span>色系名称</span>
                             <input
@@ -1598,18 +1827,24 @@ function createGroupEditor(draft) {
 row.find('.ntm-variant-color').on(
     'input',
     function () {
-        variant.color = String(
-            $(this).val() ?? '#8b7cff',
+        const color = String(
+            $(this).val() || '#8b7cff',
         );
 
-        variant.colorAuto = false;
+        variant.color = color;
+        variant.colorSource = 'manual';
 
-        row.find('.ntm-mini-preview').css(
-            '--ntm-editor-color',
-            variant.color,
-        );
+        row.find('.ntm-mini-preview')
+            .css(
+                '--ntm-editor-color',
+                color,
+            );
+
+        row.find('.ntm-color-source')
+            .text('手动颜色');
     },
 );
+
 
 row.find('.ntm-auto-color').on(
     'change',
@@ -1730,57 +1965,120 @@ row.find('.ntm-native-theme-select').on(
                 },
             );
 
-            row.find('.ntm-theme-json-file').on(
-                'change',
-                async function () {
-                    const input =
-                        this instanceof HTMLInputElement
-                            ? this
-                            : null;
+row.find('.ntm-theme-json-file').on(
+    'change',
+    async function () {
+        const input =
+            this instanceof HTMLInputElement
+                ? this
+                : null;
 
-                    const file = input?.files?.[0];
+        const file = input?.files?.[0];
 
-                    if (!file) {
-                        return;
-                    }
+        if (!file) {
+            return;
+        }
 
-                    try {
-                        const text = await file.text();
-                        const parsed = JSON.parse(text);
+        try {
+            const text = await file.text();
+            const parsed = JSON.parse(text);
 
-                        const key =
-                            variant.themeFileKey ||
-                            `theme:${uuidv4()}`;
+            if (
+                !parsed ||
+                typeof parsed !== 'object' ||
+                Array.isArray(parsed)
+            ) {
+                throw new Error('主题 JSON 顶层必须是对象');
+            }
 
-                        await saveBlob(
-                            key,
-                            new Blob(
-                                [text],
-                                {
-                                    type: 'application/json',
-                                },
-                            ),
-                        );
+            const key =
+                variant.themeFileKey ||
+                `theme:${uuidv4()}`;
 
-                        variant.themeFileKey = key;
-                        variant.themeFileName = file.name;
-                        variant.themeFileSuggestedName =
-                            getSuggestedThemeName(parsed);
-
-                        row.find('.ntm-theme-file-status')
-                            .text(file.name);
-
-                        toastr.success(
-                            '真实主题文件已保存。',
-                        );
-                    } catch (error) {
-                        console.error(error);
-                        toastr.error(
-                            '这不是有效的 JSON 主题文件。',
-                        );
-                    }
-                },
+            await saveBlob(
+                key,
+                new Blob(
+                    [text],
+                    {
+                        type: 'application/json',
+                    },
+                ),
             );
+
+            const suggestedName =
+                getSuggestedThemeName(parsed) ||
+                file.name.replace(/\.json$/i, '');
+
+            /*
+             * 关键修正：
+             * 从当前上传的这个 JSON 中读取它自己的主题色。
+             */
+            const accentColor =
+                extractThemeAccentColor(
+                    parsed,
+                    suggestedName,
+                );
+
+            variant.themeFileKey = key;
+            variant.themeFileName = file.name;
+            variant.themeFileSuggestedName = suggestedName;
+            variant.color = accentColor;
+            variant.colorSource = 'json';
+
+            /*
+             * 如果还是默认名称，自动改成主题文件中的名称。
+             */
+            if (
+                !variant.name ||
+                variant.name === '新色系' ||
+                variant.name === '默认'
+            ) {
+                variant.name = suggestedName;
+                row.find('.ntm-variant-name')
+                    .val(suggestedName);
+            }
+
+            /*
+             * 更新当前编辑器中的颜色输入。
+             */
+            row.find('.ntm-variant-color')
+                .val(accentColor);
+
+            /*
+             * 更新当前编辑器中的预览占位色。
+             */
+            row.find('.ntm-mini-preview')
+                .css(
+                    '--ntm-editor-color',
+                    accentColor,
+                );
+
+            row.find('.ntm-theme-file-status')
+                .text(file.name);
+
+            row.find('.ntm-color-source')
+                .text('来自主题文件');
+
+            toastr.success(
+                `已读取“${suggestedName}”的主题色：${accentColor}`,
+            );
+        } catch (error) {
+            console.error(
+                '[Theme Manager] Invalid theme JSON:',
+                error,
+            );
+
+            toastr.error(
+                `主题文件无效：${error?.message || '无法解析 JSON'}`,
+            );
+        } finally {
+            if (input) {
+                input.value = '';
+            }
+        }
+    },
+);
+
 
             row.find('.ntm-remove-variant').on(
                 'click',
