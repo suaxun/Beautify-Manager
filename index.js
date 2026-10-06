@@ -90,23 +90,198 @@ function escapeAttribute(value) {
 }
 
 /**
- * 生成一个稳定颜色。
+ * 根据主题名称推测常见色系。
+ * 如果名字中没有颜色信息，则使用稳定哈希色。
  *
  * @param {string} text
  * @returns {string}
  */
 function createStableColor(text) {
+    const name = String(text || '').toLocaleLowerCase();
+
+    const namedColors = [
+        {
+            keywords: ['red', 'rose', 'ruby', 'scarlet', 'crimson', '红', '玫瑰'],
+            color: '#e96878',
+        },
+        {
+            keywords: ['pink', 'sakura', 'peach', '樱', '粉', '桃'],
+            color: '#ec78a9',
+        },
+        {
+            keywords: ['purple', 'violet', 'lavender', 'amethyst', '紫', '薰衣草'],
+            color: '#9675e8',
+        },
+        {
+            keywords: ['blue', 'ocean', 'sky', 'azure', 'cyan', '蓝', '海洋', '天空'],
+            color: '#609de8',
+        },
+        {
+            keywords: ['teal', 'aqua', 'turquoise', '青', '湖蓝'],
+            color: '#45b8b0',
+        },
+        {
+            keywords: ['green', 'forest', 'mint', 'emerald', '绿', '森林', '薄荷'],
+            color: '#61b982',
+        },
+        {
+            keywords: ['yellow', 'gold', 'amber', 'sun', '黄', '金', '琥珀'],
+            color: '#d9ad55',
+        },
+        {
+            keywords: ['orange', 'sunset', '橙', '夕阳'],
+            color: '#df8654',
+        },
+        {
+            keywords: ['brown', 'coffee', 'sepia', '棕', '咖啡'],
+            color: '#a77b60',
+        },
+        {
+            keywords: ['white', 'light', 'snow', 'ivory', '白', '浅色'],
+            color: '#c7cad4',
+        },
+        {
+            keywords: ['black', 'dark', 'midnight', 'night', '黑', '暗色', '夜'],
+            color: '#747b96',
+        },
+    ];
+
+    for (const entry of namedColors) {
+        if (entry.keywords.some(keyword => name.includes(keyword))) {
+            return entry.color;
+        }
+    }
+
     let hash = 0;
 
-    for (const character of String(text)) {
+    for (const character of name) {
         hash = ((hash << 5) - hash) + character.codePointAt(0);
         hash |= 0;
     }
 
     const hue = Math.abs(hash) % 360;
 
-    return `hsl(${hue} 72% 58%)`;
+    /*
+     * 使用稍微柔和一些的颜色，避免色点过亮。
+     */
+    return `hsl(${hue} 62% 58%)`;
 }
+
+/**
+ * 把 rgb()/rgba() 转换为十六进制颜色。
+ *
+ * @param {string} color
+ * @returns {string}
+ */
+function rgbColorToHex(color) {
+    const value = String(color || '').trim();
+
+    if (/^#[0-9a-f]{6}$/i.test(value)) {
+        return value.toLowerCase();
+    }
+
+    if (/^#[0-9a-f]{3}$/i.test(value)) {
+        return `#${value[1]}${value[1]}${value[2]}${value[2]}${value[3]}${value[3]}`
+            .toLowerCase();
+    }
+
+    const match = value.match(
+        /rgba?\(\s*(\d+(?:\.\d+)?)\s*[, ]\s*(\d+(?:\.\d+)?)\s*[, ]\s*(\d+(?:\.\d+)?)/i,
+    );
+
+    if (!match) {
+        return '';
+    }
+
+    const channels = match.slice(1, 4).map(channel => {
+        const number = Math.max(0, Math.min(255, Math.round(Number(channel))));
+        return number.toString(16).padStart(2, '0');
+    });
+
+    return `#${channels.join('')}`;
+}
+
+/**
+ * 尝试将浏览器支持的任意 CSS 颜色转换为十六进制。
+ *
+ * @param {string} color
+ * @returns {string}
+ */
+function normalizeColorToHex(color) {
+    const direct = rgbColorToHex(color);
+
+    if (direct) {
+        return direct;
+    }
+
+    const probe = document.createElement('span');
+
+    probe.style.position = 'fixed';
+    probe.style.pointerEvents = 'none';
+    probe.style.opacity = '0';
+    probe.style.color = String(color || '');
+    document.body.appendChild(probe);
+
+    const computedColor = getComputedStyle(probe).color;
+    probe.remove();
+
+    return rgbColorToHex(computedColor);
+}
+
+/**
+ * 读取当前 SillyTavern 主题的实际主题色。
+ *
+ * 优先读取 QuoteColor，因为大部分 ST 主题都将它作为强调色。
+ *
+ * @returns {string}
+ */
+function getCurrentThemeAccentColor() {
+    const styles = getComputedStyle(document.documentElement);
+
+    const candidates = [
+        styles.getPropertyValue('--SmartThemeQuoteColor'),
+        styles.getPropertyValue('--SmartThemeEmColor'),
+        styles.getPropertyValue('--SmartThemeUnderlineColor'),
+        styles.getPropertyValue('--SmartThemeBorderColor'),
+        styles.getPropertyValue('--SmartThemeBodyColor'),
+    ];
+
+    for (const candidate of candidates) {
+        const color = normalizeColorToHex(candidate);
+
+        if (color) {
+            return color;
+        }
+    }
+
+    return '';
+}
+
+/**
+ * 应用主题后，读取当前主题真实强调色。
+ *
+ * @param {object} variant
+ * @returns {Promise<void>}
+ */
+async function captureVariantThemeColor(variant) {
+    if (!variant || variant.colorAuto === false) {
+        return;
+    }
+
+    /*
+     * 留一点时间让 SillyTavern 更新 CSS 变量。
+     */
+    await delay(120);
+
+    const actualColor = getCurrentThemeAccentColor();
+
+    if (actualColor) {
+        variant.color = actualColor;
+        variant.colorAuto = true;
+        saveSettings();
+    }
+}
+
 
 /**
  * 释放预览图 URL。
@@ -312,16 +487,27 @@ function getSettings() {
                     group.variants[0]?.id ||
                     '',
                 ),
-                variants: group.variants.map(variant => ({
-                    id: String(variant.id || uuidv4()),
-                    name: String(variant.name || '默认'),
-                    color: String(
-                        variant.color ||
-                        createStableColor(variant.name),
-                    ),
-                    nativeThemeValue: String(
-                        variant.nativeThemeValue || '',
-                    ),
+variants: group.variants.map(variant => ({
+    id: String(variant.id || uuidv4()),
+    name: String(variant.name || '默认'),
+
+    /*
+     * 旧数据没有 colorAuto 字段时，默认使用自动主题色。
+     */
+    colorAuto: variant.colorAuto !== false,
+
+    color: String(
+        variant.color ||
+        createStableColor(
+            variant.nativeThemeValue ||
+            variant.name ||
+            group.name,
+        ),
+    ),
+
+    nativeThemeValue: String(
+        variant.nativeThemeValue || '',
+    ),
                     previewKey: String(variant.previewKey || ''),
                     previewFileName: String(
                         variant.previewFileName || '',
@@ -489,6 +675,7 @@ function syncNativeThemesToGroups() {
                 {
                     id: variantId,
                     name: '默认',
+                    colorAuto: true,
                     color: createStableColor(theme.name),
                     nativeThemeValue: theme.value,
                     previewKey: '',
@@ -687,19 +874,21 @@ async function importVariantThemeFile(variant) {
 async function activateVariant(group, variant) {
     group.activeVariantId = variant.id;
     saveSettings();
+if (
+    variant.nativeThemeValue &&
+    nativeThemeExists(variant.nativeThemeValue)
+) {
+    selectNativeTheme(variant.nativeThemeValue);
 
     /*
-     * 已经安装的原生主题，直接切换。
+     * 如果设置为自动颜色，就从实际主题中读取强调色。
      */
-    if (
-        variant.nativeThemeValue &&
-        nativeThemeExists(variant.nativeThemeValue)
-    ) {
-        selectNativeTheme(variant.nativeThemeValue);
-        await renderGroups();
-        updateCurrentThemeDisplay();
-        return;
-    }
+    await captureVariantThemeColor(variant);
+
+    await renderGroups();
+    updateCurrentThemeDisplay();
+    return;
+}
 
     /*
      * 原生主题不存在，但保存了真实 JSON 文件。
@@ -716,12 +905,14 @@ async function activateVariant(group, variant) {
                 importedThemeValue;
 
             saveSettings();
+selectNativeTheme(importedThemeValue);
 
-            selectNativeTheme(importedThemeValue);
+await captureVariantThemeColor(variant);
 
-            toastr.success(
-                `已切换到“${variant.name}”。`,
-            );
+toastr.success(
+    `已切换到“${variant.name}”。`,
+);
+
         } else {
             toastr.warning(
                 '文件已交给 SillyTavern 导入，但未能自动确定主题名称。请在编辑器中手动关联原生主题。',
@@ -955,45 +1146,50 @@ async function renderGroups() {
             })
             .join('');
 
-        card.innerHTML = `
-            <div class="ntm-preview-shell">
-                <div class="ntm-phone-preview">
-                    <div class="ntm-phone-speaker"></div>
+card.style.setProperty(
+    '--ntm-active-color',
+    activeVariant?.color ||
+    createStableColor(group.name),
+);
 
-                    <div class="ntm-preview-content">
-                        <div class="ntm-preview-placeholder">
-                            <i class="fa-solid fa-image"></i>
-                            <span>上传竖屏预览图</span>
-                        </div>
-
-                        <img
-                            class="ntm-preview-image displayNone"
-                            alt="${escapeAttribute(group.name)}"
-                        >
+card.innerHTML = `
+    <div class="ntm-compact-preview">
+        <div class="ntm-preview-content">
+            <div class="ntm-preview-placeholder">
+                <div class="ntm-placeholder-decoration">
+                    <div class="ntm-placeholder-topbar">
+                        <span></span>
+                        <span></span>
+                        <span></span>
                     </div>
-                </div>
 
-                <div class="ntm-card-controls">
-                    <button
-                        type="button"
-                        class="menu_button ntm-card-icon-button"
-                        data-action="edit-group"
-                        data-group-id="${escapeAttribute(group.id)}"
-                        title="编辑主题系列"
-                    >
-                        <i class="fa-solid fa-gear"></i>
-                    </button>
+                    <div class="ntm-placeholder-chat">
+                        <div class="ntm-placeholder-avatar"></div>
 
-                    <button
-                        type="button"
-                        class="menu_button ntm-card-icon-button ntm-card-delete"
-                        data-action="delete-group"
-                        data-group-id="${escapeAttribute(group.id)}"
-                        title="删除主题系列"
-                    >
-                        <i class="fa-solid fa-trash-can"></i>
-                    </button>
+                        <div class="ntm-placeholder-lines">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                    </div>
+
+                    <div class="ntm-placeholder-input"></div>
                 </div>
+            </div>
+
+            <img
+                class="ntm-preview-image displayNone"
+                alt="${escapeAttribute(group.name)}"
+            >
+        </div>
+    </div>
+
+    <div class="ntm-group-info">
+        <div class="ntm-group-title-row">
+            <div class="ntm-group-title-block">
+                <h4 title="${escapeAttribute(group.name)}">
+                    ${escapeHtml(group.name)}
+                </h4>
 
                 <div class="ntm-preview-badge">
                     ${
@@ -1002,54 +1198,71 @@ async function renderGroups() {
                             : '无色系'
                     }
                 </div>
-            </div>
-
-            <div class="ntm-group-info">
-                <h4 title="${escapeAttribute(group.name)}">
-                    ${escapeHtml(group.name)}
-                </h4>
 
                 <div class="ntm-group-theme-name">
                     ${
                         activeVariant?.nativeThemeValue
-                            ? escapeHtml(
-                                activeVariant.nativeThemeValue,
-                            )
+                            ? escapeHtml(activeVariant.nativeThemeValue)
                             : activeVariant?.themeFileName
-                                ? escapeHtml(
-                                    activeVariant.themeFileName,
-                                )
+                                ? escapeHtml(activeVariant.themeFileName)
                                 : '尚未关联真实主题'
                     }
                 </div>
+            </div>
 
-                <div class="ntm-color-row">
-                    <div class="ntm-color-dots">
-                        ${colorButtons}
-                    </div>
-
-                    <button
-                        type="button"
-                        class="ntm-add-color-button"
-                        data-action="edit-group"
-                        data-group-id="${escapeAttribute(group.id)}"
-                        title="添加或编辑色系"
-                    >
-                        <i class="fa-solid fa-plus"></i>
-                    </button>
-                </div>
+            <div class="ntm-card-controls">
+                <button
+                    type="button"
+                    class="menu_button ntm-card-icon-button"
+                    data-action="edit-group"
+                    data-group-id="${escapeAttribute(group.id)}"
+                    title="编辑主题系列"
+                >
+                    <i class="fa-solid fa-gear"></i>
+                </button>
 
                 <button
                     type="button"
-                    class="ntm-apply-button"
-                    data-action="activate-current"
+                    class="menu_button ntm-card-icon-button ntm-card-delete"
+                    data-action="delete-group"
                     data-group-id="${escapeAttribute(group.id)}"
+                    title="删除主题系列"
                 >
-                    <i class="fa-solid fa-wand-magic-sparkles"></i>
-                    <span>应用这个色系</span>
+                    <i class="fa-solid fa-trash-can"></i>
                 </button>
             </div>
-        `;
+        </div>
+
+        <div class="ntm-color-row">
+            <div class="ntm-color-dots">
+                ${colorButtons}
+            </div>
+
+            <button
+                type="button"
+                class="ntm-add-color-button"
+                data-action="edit-group"
+                data-group-id="${escapeAttribute(group.id)}"
+                title="添加或编辑色系"
+            >
+                <i class="fa-solid fa-plus"></i>
+            </button>
+        </div>
+    </div>
+
+    <div class="ntm-row-actions">
+        <button
+            type="button"
+            class="ntm-apply-button"
+            data-action="activate-current"
+            data-group-id="${escapeAttribute(group.id)}"
+        >
+            <i class="fa-solid fa-check"></i>
+            <span>应用</span>
+        </button>
+    </div>
+`;
+
 
         grid.appendChild(card);
 
@@ -1114,7 +1327,8 @@ function createEmptyVariant() {
     return {
         id: uuidv4(),
         name: '新色系',
-        color: '#8b7cff',
+        colorAuto: true,
+        color: createStableColor('新色系'),
         nativeThemeValue: '',
         previewKey: '',
         previewFileName: '',
@@ -1123,6 +1337,7 @@ function createEmptyVariant() {
         themeFileSuggestedName: '',
     };
 }
+
 
 /**
  * 构建系列编辑器。
@@ -1210,14 +1425,30 @@ function createGroupEditor(draft) {
                     data-variant-id="${escapeAttribute(variant.id)}"
                 >
                     <div class="ntm-variant-editor-top">
-                        <label class="ntm-color-input-wrap">
-                            <input
-                                class="ntm-variant-color"
-                                type="color"
-                                value="${escapeAttribute(variant.color)}"
-                            >
-                        </label>
+<div class="ntm-color-editor">
+    <label class="ntm-color-input-wrap">
+        <input
+            class="ntm-variant-color"
+            type="color"
+            value="${escapeAttribute(
+                normalizeColorToHex(variant.color) || '#8b7cff'
+            )}"
+            ${variant.colorAuto !== false ? 'disabled' : ''}
+        >
+    </label>
 
+    <label
+        class="checkbox_label ntm-auto-color-label"
+        title="应用这个主题后，从 SillyTavern CSS 变量中读取真实主题色"
+    >
+        <input
+            class="ntm-auto-color"
+            type="checkbox"
+            ${variant.colorAuto !== false ? 'checked' : ''}
+        >
+        <small>自动主题色</small>
+    </label>
+</div>
                         <label class="ntm-field ntm-variant-name-field">
                             <span>色系名称</span>
                             <input
@@ -1239,18 +1470,22 @@ function createGroupEditor(draft) {
 
                     <div class="ntm-variant-editor-body">
                         <div class="ntm-editor-preview-column">
-                            <div class="ntm-mini-phone">
-                                <div class="ntm-mini-phone-screen">
-                                    <div class="ntm-mini-placeholder">
-                                        <i class="fa-solid fa-image"></i>
-                                    </div>
+<div
+    class="ntm-mini-preview"
+    style="--ntm-editor-color: ${escapeAttribute(variant.color)}"
+>
+    <div class="ntm-mini-placeholder">
+        <div class="ntm-mini-placeholder-art">
+            <i class="fa-solid fa-image"></i>
+        </div>
+    </div>
 
-                                    <img
-                                        class="ntm-mini-preview-image displayNone"
-                                        alt=""
-                                    >
-                                </div>
-                            </div>
+    <img
+        class="ntm-mini-preview-image displayNone"
+        alt=""
+    >
+</div>
+
 
                             <label class="menu_button menu_button_icon ntm-upload-label">
                                 <i class="fa-solid fa-image"></i>
@@ -1360,23 +1595,93 @@ function createGroupEditor(draft) {
                 },
             );
 
-            row.find('.ntm-variant-color').on(
-                'input',
-                function () {
-                    variant.color = String(
-                        $(this).val() ?? '#8b7cff',
-                    );
-                },
+row.find('.ntm-variant-color').on(
+    'input',
+    function () {
+        variant.color = String(
+            $(this).val() ?? '#8b7cff',
+        );
+
+        variant.colorAuto = false;
+
+        row.find('.ntm-mini-preview').css(
+            '--ntm-editor-color',
+            variant.color,
+        );
+    },
+);
+
+row.find('.ntm-auto-color').on(
+    'change',
+    function () {
+        const enabled = Boolean($(this).prop('checked'));
+
+        variant.colorAuto = enabled;
+
+        row.find('.ntm-variant-color')
+            .prop('disabled', enabled);
+
+        if (enabled) {
+            variant.color = createStableColor(
+                variant.nativeThemeValue ||
+                variant.name ||
+                draft.name,
             );
 
-            row.find('.ntm-native-theme-select').on(
-                'change',
-                function () {
-                    variant.nativeThemeValue = String(
-                        $(this).val() ?? '',
-                    );
-                },
+            const normalized =
+                normalizeColorToHex(variant.color);
+
+            if (normalized) {
+                row.find('.ntm-variant-color')
+                    .val(normalized);
+            }
+
+            row.find('.ntm-mini-preview').css(
+                '--ntm-editor-color',
+                variant.color,
             );
+        }
+    },
+);
+row.find('.ntm-native-theme-select').on(
+    'change',
+    function () {
+        variant.nativeThemeValue = String(
+            $(this).val() ?? '',
+        );
+
+        /*
+         * 自动颜色状态下，先通过主题名称给出一个临时颜色。
+         * 实际应用后会读取真正的主题色。
+         */
+        if (variant.colorAuto !== false) {
+            const selectedOption =
+                this instanceof HTMLSelectElement
+                    ? this.selectedOptions[0]
+                    : null;
+
+            const themeName =
+                selectedOption?.textContent?.trim() ||
+                variant.nativeThemeValue ||
+                variant.name;
+
+            variant.color = createStableColor(themeName);
+
+            const normalized =
+                normalizeColorToHex(variant.color);
+
+            if (normalized) {
+                row.find('.ntm-variant-color')
+                    .val(normalized);
+            }
+
+            row.find('.ntm-mini-preview').css(
+                '--ntm-editor-color',
+                variant.color,
+            );
+        }
+    },
+);
 
             row.find('.ntm-preview-file').on(
                 'change',
