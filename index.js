@@ -407,40 +407,6 @@ function extractThemeAccentColor(themeData, fallbackName = '') {
 }
 
 /**
- * 把 rgb()/rgba() 转换为十六进制颜色。
- *
- * @param {string} color
- * @returns {string}
- */
-function rgbColorToHex(color) {
-    const value = String(color || '').trim();
-
-    if (/^#[0-9a-f]{6}$/i.test(value)) {
-        return value.toLowerCase();
-    }
-
-    if (/^#[0-9a-f]{3}$/i.test(value)) {
-        return `#${value[1]}${value[1]}${value[2]}${value[2]}${value[3]}${value[3]}`
-            .toLowerCase();
-    }
-
-    const match = value.match(
-        /rgba?\(\s*(\d+(?:\.\d+)?)\s*[, ]\s*(\d+(?:\.\d+)?)\s*[, ]\s*(\d+(?:\.\d+)?)/i,
-    );
-
-    if (!match) {
-        return '';
-    }
-
-    const channels = match.slice(1, 4).map(channel => {
-        const number = Math.max(0, Math.min(255, Math.round(Number(channel))));
-        return number.toString(16).padStart(2, '0');
-    });
-
-    return `#${channels.join('')}`;
-}
-
-/**
  * 尝试将浏览器支持的任意 CSS 颜色转换为十六进制。
  *
  * @param {string} color
